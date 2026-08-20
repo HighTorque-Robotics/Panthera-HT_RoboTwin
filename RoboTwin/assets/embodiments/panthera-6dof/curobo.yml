@@ -23,7 +23,7 @@ robot_cfg:
         "gripper_L_link",
         "gripper_R_link",
       ]
-    collision_spheres: ../../../../../../assets/embodiments/panthera-6dof/collision_panthera.yml
+    collision_spheres: ../../../../../../../assets/embodiments/panthera-6dof/collision_panthera.yml
     collision_sphere_buffer: 0.004
     extra_collision_spheres: null
     use_global_cumul: True
