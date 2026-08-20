@@ -1,6 +1,6 @@
 # RoboTwin Panthera
 
-本仓库基于 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)，面向 Panthera 六自由度机械臂，提供仿真、专家数据采集、轨迹回放和多 Policy 数据转换能力。
+本仓库基于 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)，面向 Panthera 六自由度机械臂，提供仿真、专家数据采集、轨迹回放和多 Policy 数据转换能力。Panthera 适配和维护由 [Yinghao Ho](https://github.com/CherrySama) from [HighTorque Robotics](https://github.com/HighTorque-Robotics) 完成。
 
 当前适配支持：
 
@@ -24,7 +24,6 @@
 | 多 Policy 数据转换 | 已接入；当前 adapters 主要面向双臂 14 维数据，具体边界见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
 | ACT 训练与评测 | 有统一入口，见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
 | Pi0.5 统计量计算与训练 | 有统一入口，见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
-| 所有 RoboTwin 任务的单臂适配 | 未宣称完成，必须逐任务审查 |
 | Panthera 真机控制与 sim-to-real 安全保证 | 不在本仓库范围内 |
 
 ## 仓库目录
