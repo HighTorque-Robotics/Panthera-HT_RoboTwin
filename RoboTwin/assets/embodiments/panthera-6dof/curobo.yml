@@ -6,7 +6,7 @@ robot_cfg:
     isaac_usd_path: null
     usd_flip_joints: {}
     usd_flip_joint_limits: {}
-    urdf_path: ../../../../../../../assets/embodiments/panthera-6dof/panthera_6dof.urdf
+    urdf_path: ../../../../../../assets/embodiments/panthera-6dof/panthera_6dof.urdf
     asset_root_path: null
     base_link: "base_link"
     ee_link: "tool_link"
