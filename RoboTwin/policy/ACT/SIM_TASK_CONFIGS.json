@@ -1,0 +1,12 @@
+{
+    "sim-move_pillbottle_pad-move_pillbottle_pad_panthera-200": {
+        "dataset_dir": "../../data/converted/move_pillbottle_pad_panthera_act_200",
+        "num_episodes": 200,
+        "episode_len": 213,
+        "camera_names": [
+            "cam_high",
+            "cam_right_wrist",
+            "cam_left_wrist"
+        ]
+    }
+}

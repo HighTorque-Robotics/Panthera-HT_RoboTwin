@@ -1,0 +1,66 @@
+urdf_path: "./panthera_6dof.urdf"
+srdf_path: "./panthera_6dof.srdf"
+
+joint_stiffness: 1000
+joint_damping: 200
+gripper_stiffness: 1000
+gripper_damping: 200
+
+# SAPIEN must use the same self-collision exclusions as CuRobo. This is
+# applied before the homestate drive is started; drive parameters remain
+# intentionally unchanged for the desktop-class arm.
+sapien_self_collision_filter: "curobo"
+
+# The same self-contained six-DOF model is instantiated independently on
+# the left and right side by the [panthera-6dof, panthera-6dof, distance]
+# embodiment form.
+move_group: ["tool_link", "tool_link"]
+ee_joints: ["tool_joint", "tool_joint"]
+# tool_joint is fixed at the exported TCP; use its child link pose for
+# runtime Cartesian targets.
+ee_pose_source: "child_link"
+arm_joints_name:
+  - ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+  - ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+
+gripper_name:
+  - base: "gripper_L_joint"
+    mimic: [["gripper_R_joint", -1.0, 0.0]]
+  - base: "gripper_L_joint"
+    mimic: [["gripper_R_joint", -1.0, 0.0]]
+
+# RoboTwin normalizes gripper commands to [0, 1]. The model uses metres;
+# 1.0 therefore means the 40 mm open position. The task grasp frame is
+# 120 mm behind tool_link so the Panthera fingers reach the contact
+# point along their actual local -X geometry. The exported finger frames
+# retain the validated 0-40 mm motion convention used by RoboTwin.
+gripper_bias: 0.0
+gripper_scale: [0.0, 0.04]
+
+# The SDK examples use the all-zero joint target for the follower reset pose.
+homestate:
+  - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+# Panthera's tool frame already uses x as the forward grasp axis.
+delta_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+global_trans_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+
+# These are the un-offset base poses. The non-combined embodiment path adds
+# +/- embodiment_dis / 2 to x for the two independent instances.
+robot_pose:
+  - [0.0, -0.45, 0.75, 0.70710678, 0.0, 0.0, 0.70710678]
+  - [0.0, -0.45, 0.75, 0.70710678, 0.0, 0.0, 0.70710678]
+
+planner: "mplib_screw"
+dual_arm: false
+rotate_lim: [-0.8, 0.8]
+grasp_perfect_direction: ["front_right", "front_left"]
+
+# Static cameras are scene cameras, not robot links. The first version uses
+# RoboTwin's existing head-camera convention.
+static_camera_list:
+  - name: head_camera
+    position: [-0.032, -0.45, 1.35]
+    forward: [0.0, 0.6, -0.8]
+    left: [-1.0, 0.0, 0.0]

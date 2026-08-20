@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<robot name="Panthera-HT_description">
+  <group name="arm">
+    <joint name="joint1"/>
+    <joint name="joint2"/>
+    <joint name="joint3"/>
+    <joint name="joint4"/>
+    <joint name="joint5"/>
+    <joint name="joint6"/>
+    <chain base_link="base_link" tip_link="tool_link"/>
+  </group>
+
+  <group name="hand">
+    <link name="tool_link"/>
+    <link name="gripper_L_link"/>
+    <link name="gripper_R_link"/>
+  </group>
+
+  <end_effector name="eef" parent_link="tool_link" group="hand"/>
+  <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_link"/>
+
+  <disable_collisions link1="base_link" link2="link1" reason="Adjacent"/>
+  <disable_collisions link1="link1" link2="link2" reason="Adjacent"/>
+  <disable_collisions link1="link2" link2="link3" reason="Adjacent"/>
+  <disable_collisions link1="link3" link2="link4" reason="Adjacent"/>
+  <disable_collisions link1="link4" link2="link5" reason="Adjacent"/>
+  <disable_collisions link1="link5" link2="link6" reason="Adjacent"/>
+  <disable_collisions link1="link6" link2="tool_link" reason="Adjacent"/>
+  <disable_collisions link1="link6" link2="camera_link" reason="Adjacent"/>
+  <disable_collisions link1="link6" link2="gripper_L_link" reason="Adjacent"/>
+  <disable_collisions link1="link6" link2="gripper_R_link" reason="Adjacent"/>
+  <disable_collisions link1="gripper_L_link" link2="gripper_R_link" reason="Default"/>
+</robot>
