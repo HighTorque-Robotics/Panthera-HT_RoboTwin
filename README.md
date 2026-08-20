@@ -1,4 +1,4 @@
-# RoboTwin Panthera 适配版
+# RoboTwin Panthera
 
 本仓库基于 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)，面向 Panthera 六自由度机械臂，提供仿真、专家数据采集、轨迹回放和多 Policy 数据转换能力。
 
@@ -47,7 +47,6 @@ RoboTwin/
 │   ├── train.py                      # ACT/Pi0.5 统一训练入口
 │   ├── eval.py                       # ACT 统一评测入口
 │   └── <policy>/                     # 各 Policy 原生代码
-├── docs/                             # 适配记录、数据契约和上游 README
 └── README.md
 ```
 
