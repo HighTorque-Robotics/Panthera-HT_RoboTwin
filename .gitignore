@@ -48,3 +48,7 @@ RoboTwin/*.txt
 !RoboTwin/assets/embodiments/panthera-6dof/
 !RoboTwin/assets/embodiments/panthera-6dof/**
 !RoboTwin/task_config/
+
+# Local tests
+RoboTwin/tests/
+RoboTwin/policy/tests/

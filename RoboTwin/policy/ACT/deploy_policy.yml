@@ -23,8 +23,6 @@ num_epochs: 2000
 
 # RoboTwin rollout validation
 test_num: 100
-physics_validation: false
-
 # Model training params
 position_embedding: sine
 lr_backbone: 0.00001

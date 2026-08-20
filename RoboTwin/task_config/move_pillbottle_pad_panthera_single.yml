@@ -9,7 +9,6 @@ panthera_mode: true
 panthera_pad_y_lim: [-0.05, 0.10]
 panthera_side_contact_height: 0.90
 panthera_side_candidate_skip: 1
-physics_validation: true
 language_num: 1
 domain_randomization:
   random_background: true
