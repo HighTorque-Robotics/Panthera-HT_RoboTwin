@@ -269,5 +269,3 @@ python policy/data_convert.py --policy <act|pi0|pi05|go1|rdt|tinyvla|dexvla|dp|d
 ## License
 
 除另有说明外，仓库外层新增文件由 HighTorque Robotics 按 [MIT License](LICENSE) 发布。`RoboTwin/` 目录保留 RoboTwin 原有许可证、版权声明及第三方组件许可证；其上游 README、论文和 BibTeX 引用见 [`RoboTwin/docs/ROBOTWIN_UPSTREAM_README.md`](RoboTwin/docs/ROBOTWIN_UPSTREAM_README.md)。
-
-`policy/` 下的第三方项目可能带有各自的许可证，使用和再分发时必须同时遵守对应条款。Panthera URDF、网格和配套配置由本项目提供并随仓库公开发布。
