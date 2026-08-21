@@ -36,6 +36,7 @@ RoboTwin/envs/curobo/
 
 # Generated task/config artifacts; release Panthera configs explicitly
 RoboTwin/task_config/*
+!RoboTwin/task_config/README.md
 !RoboTwin/task_config/_*.yml
 !RoboTwin/task_config/*_panthera.yml
 !RoboTwin/task_config/*_panthera_single.yml
