@@ -7,6 +7,10 @@ import math
 
 class click_bell(Base_Task):
 
+    PANTHERA_PRESS_QUAT = np.array([0.5, -0.5, 0.5, 0.5])
+    PANTHERA_FINGER_FRONT_OFFSET = 0.1245
+    PANTHERA_PRE_PRESS_DISTANCE = 0.02
+
     def setup_demo(self, **kwags):
         super()._init_task_env_(**kwags)
 
@@ -37,31 +41,42 @@ class click_bell(Base_Task):
         self.check_arm_function = self.is_left_gripper_close if self.bell.get_pose().p[0] < 0 else self.is_right_gripper_close
     
     def play_once(self):
-        # Choose the arm to use: right arm if the bell is on the right side (positive x), left otherwise
+        # Choose the arm based on the bell's side.
         arm_tag = ArmTag("right" if self.bell.get_pose().p[0] > 0 else "left")
-    
-        # Move the gripper above the top center of the bell and close the gripper to simulate a click
-        # Note: grasp_actor here is not used to grasp the bell, but to simulate a touch/click action
-        # You must use the same pre_grasp_dis and grasp_dis values as in the click_bell task
-        self.move(self.grasp_actor(
-            self.bell,
-            arm_tag=arm_tag,
-            pre_grasp_dis=0.1,
-            grasp_dis=0.1,
-            contact_point_id=0,  # Targeting the bell's top center
-        ))
-    
-        # Move the gripper downward to touch the top center of the bell
-        self.move(self.move_by_displacement(arm_tag, z=-0.045))
-    
-        # Check whether the simulated click action was successful
-        self.check_success()
-    
-        # Move the gripper back up to the original position (no need to lift or grasp the bell)
-        self.move(self.move_by_displacement(arm_tag, z=0.045))
-    
-        # Check success again if needed (optional, based on your task logic)
-        self.check_success()
+
+        if "panthera-6dof" in self.robot_type:
+            contact_point = np.array(self.bell.get_contact_point(0)[:3], dtype=np.float64)
+            press_rotation = t3d.quaternions.quat2mat(self.PANTHERA_PRESS_QUAT)
+            press_pose = contact_point - press_rotation @ np.array(
+                [self.PANTHERA_FINGER_FRONT_OFFSET, 0.0, 0.0]
+            )
+            pre_press_pose = press_pose + np.array(
+                [0.0, 0.0, self.PANTHERA_PRE_PRESS_DISTANCE]
+            )
+            press_pose = press_pose.tolist() + self.PANTHERA_PRESS_QUAT.tolist()
+            pre_press_pose = pre_press_pose.tolist() + self.PANTHERA_PRESS_QUAT.tolist()
+            self.move((
+                arm_tag,
+                [
+                    Action(arm_tag, "move", target_pose=pre_press_pose),
+                    Action(arm_tag, "close", target_gripper_pos=0.0),
+                    Action(arm_tag, "move", target_pose=press_pose),
+                ],
+            ))
+            self.check_success()
+            self.move(self.move_to_pose(arm_tag, pre_press_pose))
+        else:
+            self.move(self.grasp_actor(
+                self.bell,
+                arm_tag=arm_tag,
+                pre_grasp_dis=0.1,
+                grasp_dis=0.1,
+                contact_point_id=0,
+            ))
+            self.move(self.move_by_displacement(arm_tag, z=-0.045))
+            self.check_success()
+            self.move(self.move_by_displacement(arm_tag, z=0.045))
+            self.check_success()
     
         # Record which bell and arm were used in the info dictionary
         self.info["info"] = {"{A}": f"050_bell/base{self.bell_id}", "{a}": str(arm_tag)}
