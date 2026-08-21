@@ -12,29 +12,16 @@
 
 本仓库不是 RoboTwin 官方发行版。当前文档只承诺下方明确列出的流程；其他任务、随机化组合和真机验证仍需逐项审查。
 
-## 项目状态
-
-| 能力 | 状态 |
-| --- | --- |
-| `move_pillbottle_pad` 双臂采集 | 已验证 |
-| `move_pillbottle_pad` 单臂采集 | 已验证，10 条正式 episode |
-| `blocks_ranking_rgb` 双臂配置与回归 | 已完成配置和真实回归 |
-| `blocks_ranking_rgb` 单臂采集 | 已验证，10 条正式 episode、30 次方块抓放周期 |
-| 单臂/双臂原始轨迹回放 | 已验证 |
-| 多 Policy 数据转换 | 已接入；当前 adapters 主要面向双臂 14 维数据，具体边界见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
-| ACT 训练与评测 | 有统一入口，见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
-| Pi0.5 统计量计算与训练 | 有统一入口，见 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) |
-| Panthera 真机控制与 sim-to-real 安全保证 | 不在本仓库范围内 |
-
 ## 仓库目录
 
 ```text
 RoboTwin/
 ├── assets/
-│   └── embodiments/panthera-6dof/   # Panthera URDF、SRDF、网格和 CuRobo 配置
+│   └── embodiments/panthera-6dof/    # Panthera URDF、SRDF、网格和 CuRobo 配置
 ├── description/                      # 任务和物体语言模板、instruction 生成器
 ├── envs/                             # RoboTwin 任务、机器人和相机仿真逻辑
 ├── task_config/                      # 任务、相机、embodiment 和采集配置
+│   ├── README.md                     # 任务适配配置详情
 ├── script/
 │   ├── collect_data.py               # 采集主入口
 │   ├── replay_data.py                # SAPIEN Viewer 密集轨迹回放
