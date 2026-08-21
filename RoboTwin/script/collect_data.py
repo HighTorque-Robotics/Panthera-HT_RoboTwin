@@ -21,6 +21,42 @@ current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
 
 
+PANTHERA_SINGLE_ARM_TASKS = frozenset({
+    "adjust_bottle",
+    "beat_block_hammer",
+    "blocks_ranking_rgb",
+    "blocks_ranking_size",
+    "click_alarmclock",
+    "click_bell",
+    "move_can_pot",
+    "move_pillbottle_pad",
+    "move_playingcard_away",
+    "move_stapler_pad",
+    "open_laptop",
+    "open_microwave",
+    "place_a2b_left",
+    "place_a2b_right",
+    "place_container_plate",
+    "place_empty_cup",
+    "place_fan",
+    "place_mouse_pad",
+    "place_object_scale",
+    "place_object_stand",
+    "place_phone_stand",
+    "place_shoe",
+    "press_stapler",
+    "rotate_qrcode",
+    "shake_bottle",
+    "shake_bottle_horizontally",
+    "stack_blocks_three",
+    "stack_blocks_two",
+    "stack_bowls_three",
+    "stack_bowls_two",
+    "stamp_seal",
+    "turn_switch",
+})
+
+
 def class_decorator(task_name):
     envs_module = importlib.import_module(f"envs.{task_name}")
     try:
@@ -36,6 +72,36 @@ def get_embodiment_config(robot_file):
     with open(robot_config_file, "r", encoding="utf-8") as f:
         embodiment_args = yaml.load(f.read(), Loader=yaml.FullLoader)
     return embodiment_args
+
+
+def load_collection_config(task_name, task_config):
+    """Load an explicit config or derive the approved Panthera single-arm view."""
+    for suffix in (".yaml", ".yml"):
+        config_path = Path("task_config") / f"{task_config}{suffix}"
+        if config_path.is_file():
+            with config_path.open("r", encoding="utf-8") as file:
+                return yaml.load(file.read(), Loader=yaml.FullLoader)
+
+    expected_single_name = f"{task_name}_panthera_single"
+    if task_config != expected_single_name or task_name not in PANTHERA_SINGLE_ARM_TASKS:
+        raise FileNotFoundError(f"Task config not found: {task_config}.yml")
+
+    base_path = Path("task_config") / f"{task_name}_panthera.yml"
+    if not base_path.is_file():
+        raise FileNotFoundError(
+            f"Cannot derive {task_config}.yml: base config {base_path} does not exist"
+        )
+    with base_path.open("r", encoding="utf-8") as file:
+        args = yaml.load(file.read(), Loader=yaml.FullLoader)
+
+    embodiment = args.get("embodiment")
+    if not isinstance(embodiment, list) or not embodiment or embodiment[0] != "panthera-6dof":
+        raise ValueError(
+            f"Cannot derive Panthera single-arm config from embodiment={embodiment!r}"
+        )
+    args["arm_mode"] = "single"
+    args["embodiment"] = ["panthera-6dof"]
+    return args
 
 
 def start_physics_validation(task_env, args):
@@ -89,12 +155,7 @@ def prepare_task_and_args(task_name, task_config):
     point so that embodiment and arm-mode handling stay in one place.
     """
     task = class_decorator(task_name)
-    config_path = f"./task_config/{task_config}.yaml"
-    if not os.path.exists(config_path):
-        config_path = f"./task_config/{task_config}.yml"
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        args = yaml.load(f.read(), Loader=yaml.FullLoader)
+    args = load_collection_config(task_name, task_config)
 
     args['task_name'] = task_name
 
@@ -172,12 +233,22 @@ def prepare_task_and_args(task_name, task_config):
 
     args["embodiment_name"] = embodiment_name
     args['task_config'] = task_config
+    args["data_root"] = os.path.abspath(args["save_path"])
     args["save_path"] = os.path.join(args["save_path"], str(args["task_name"]), args["task_config"])
     return task, args
 
 
-def main(task_name=None, task_config=None):
+def main(task_name=None, task_config=None, episode_num=None, save_path=None):
     task, args = prepare_task_and_args(task_name, task_config)
+    if episode_num is not None:
+        if episode_num < 1:
+            raise ValueError("episode_num must be at least 1")
+        args["episode_num"] = episode_num
+    if save_path is not None:
+        args["data_root"] = os.path.abspath(save_path)
+        args["save_path"] = os.path.join(
+            args["data_root"], str(args["task_name"]), args["task_config"]
+        )
     run(task, args)
 
 
@@ -326,7 +397,7 @@ def run(TASK_ENV, args):
             physics_monitor = start_physics_validation(TASK_ENV, args)
             physics_report = None
             try:
-                info = TASK_ENV.play_once()
+                info = TASK_ENV.normalize_episode_info(TASK_ENV.play_once())
             finally:
                 physics_report = finish_physics_validation(
                     TASK_ENV,
@@ -371,6 +442,8 @@ def run(TASK_ENV, args):
                 args["task_name"],
                 args["task_config"],
                 str(args["language_num"]),
+                "--data-root",
+                args["data_root"],
             ],
             cwd="description",
             check=True,
@@ -387,8 +460,25 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("task_name", type=str)
     parser.add_argument("task_config", type=str)
+    parser.add_argument(
+        "--episode-num",
+        type=int,
+        default=None,
+        help="Override the episode count from the task config",
+    )
+    parser.add_argument(
+        "--save-path",
+        type=str,
+        default=None,
+        help="Override the root directory used to store collected data",
+    )
     parser = parser.parse_args()
     task_name = parser.task_name
     task_config = parser.task_config
 
-    main(task_name=task_name, task_config=task_config)
+    main(
+        task_name=task_name,
+        task_config=task_config,
+        episode_num=parser.episode_num,
+        save_path=parser.save_path,
+    )

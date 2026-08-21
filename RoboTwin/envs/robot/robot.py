@@ -595,6 +595,8 @@ class Robot:
         return jointState_list
 
     def get_right_arm_jointState(self) -> list:
+        if self.single_arm_mode:
+            return self.get_left_arm_jointState()
         jointState_list = []
         for joint in self.right_arm_joints:
             jointState_list.append(joint.get_drive_target()[0].astype(float))
@@ -611,6 +613,8 @@ class Robot:
         return jointState_list
 
     def get_right_arm_real_jointState(self) -> list:
+        if self.single_arm_mode:
+            return self.get_left_arm_real_jointState()
         jointState_list = []
         right_joints_qpos = self.right_entity.get_qpos()
         right_active_joints = self.right_entity.get_active_joints()
@@ -626,6 +630,8 @@ class Robot:
         return self.left_gripper_val
 
     def get_right_gripper_val(self):
+        if self.single_arm_mode:
+            return self.get_left_gripper_val()
         if None in self.right_gripper:
             print("No gripper")
             return 0
@@ -635,18 +641,24 @@ class Robot:
         return self.left_gripper_val > 0.8
 
     def is_right_gripper_open(self):
+        if self.single_arm_mode:
+            return self.is_left_gripper_open()
         return self.right_gripper_val > 0.8
 
     def is_left_gripper_open_half(self):
         return self.left_gripper_val > 0.45
 
     def is_right_gripper_open_half(self):
+        if self.single_arm_mode:
+            return self.is_left_gripper_open_half()
         return self.right_gripper_val > 0.45
 
     def is_left_gripper_close(self):
         return self.left_gripper_val < 0.2
 
     def is_right_gripper_close(self):
+        if self.single_arm_mode:
+            return self.is_left_gripper_close()
         return self.right_gripper_val < 0.2
 
     # get move group joint pose
@@ -654,6 +666,8 @@ class Robot:
         return self._trans_endpose(arm_tag="left", is_endpose=False)
 
     def get_right_ee_pose(self):
+        if self.single_arm_mode:
+            return self.get_left_ee_pose()
         return self._trans_endpose(arm_tag="right", is_endpose=False)
 
     # get gripper centor pose
@@ -661,6 +675,8 @@ class Robot:
         return self._trans_endpose(arm_tag="left", is_endpose=True)
 
     def get_right_tcp_pose(self):
+        if self.single_arm_mode:
+            return self.get_left_tcp_pose()
         return self._trans_endpose(arm_tag="right", is_endpose=True)
 
     def get_left_orig_endpose(self):
@@ -673,6 +689,8 @@ class Robot:
             @ global_trans_matrix).tolist())
 
     def get_right_orig_endpose(self):
+        if self.single_arm_mode:
+            return self.get_left_orig_endpose()
         pose = self.right_ee.global_pose
         global_trans_matrix = self.right_global_trans_matrix
         pose.p = pose.p - self.right_entity_origion_pose.p

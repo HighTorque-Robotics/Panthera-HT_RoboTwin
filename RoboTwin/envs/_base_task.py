@@ -501,6 +501,30 @@ class Base_Task(gym.Env):
 
     # =========================================================== Basic APIs ===========================================================
 
+    def _resolve_arm_tag(self, arm_tag):
+        """Map task-side arm choices onto the only execution channel in single-arm mode."""
+        arm_tag = ArmTag(arm_tag)
+        return ArmTag("left") if self.single_arm_mode else arm_tag
+
+    def normalize_episode_info(self, episode_info):
+        """Remove left/right wording from arm placeholders in single-arm episodes."""
+        if not self.single_arm_mode or not isinstance(episode_info, dict):
+            return episode_info
+        task_info = episode_info.get("info")
+        if not isinstance(task_info, dict):
+            return episode_info
+        for placeholder, value in task_info.items():
+            is_arm_placeholder = (
+                isinstance(placeholder, str)
+                and len(placeholder) == 3
+                and placeholder[0] == "{"
+                and placeholder[1].islower()
+                and placeholder[2] == "}"
+            )
+            if is_arm_placeholder and str(value) in {"left", "right"}:
+                task_info[placeholder] = "robot"
+        return episode_info
+
     def get_obs(self):
         self._update_render()
         self.cameras.update_picture()
@@ -1042,6 +1066,14 @@ class Base_Task(gym.Env):
         if self.plan_success is False:
             return False
 
+        if self.single_arm_mode:
+            if actions_by_arm2 is not None:
+                raise RuntimeError("Single-arm mode cannot execute two arm action groups")
+            resolved_tag = self._resolve_arm_tag(actions_by_arm1[0])
+            for action in actions_by_arm1[1]:
+                action.arm_tag = resolved_tag
+            actions_by_arm1 = (resolved_tag, actions_by_arm1[1])
+
         actions = [actions_by_arm1, actions_by_arm2]
         left_actions = get_actions(actions, "left")
         right_actions = get_actions(actions, "right")
@@ -1141,6 +1173,7 @@ class Base_Task(gym.Env):
         """
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if arm_tag == "left":
             plan_multi_pose = self.robot.left_plan_multi_path
         elif arm_tag == "right":
@@ -1178,6 +1211,7 @@ class Base_Task(gym.Env):
         """
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
+        arm_tag = self._resolve_arm_tag(arm_tag)
 
         contact_matrix = actor.get_contact_point(contact_point_id, "matrix")
         if contact_matrix is None:
@@ -1227,6 +1261,7 @@ class Base_Task(gym.Env):
         """
         if not self.plan_success:
             return
+        arm_tag = self._resolve_arm_tag(arm_tag)
         res_pre_top_down_pose = None
         res_top_down_pose = None
         dis_top_down = 1e9
@@ -1309,6 +1344,7 @@ class Base_Task(gym.Env):
     ):
         if not self.plan_success:
             return None, []
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if self.need_plan == False:
             if pre_grasp_dis == grasp_dis:
                 return arm_tag, [
@@ -1367,6 +1403,7 @@ class Base_Task(gym.Env):
 
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
+        arm_tag = self._resolve_arm_tag(arm_tag)
 
         actor_matrix = actor.get_pose().to_transformation_matrix()
         if functional_point_id is not None:
@@ -1452,6 +1489,7 @@ class Base_Task(gym.Env):
     ):
         if not self.plan_success:
             return None, []
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if self.need_plan:
             place_pre_pose = self.get_place_pose(
                 actor,
@@ -1490,6 +1528,7 @@ class Base_Task(gym.Env):
         quat: list = None,
         move_axis: Literal["world", "arm"] = "world",
     ):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if arm_tag == "left":
             origin_pose = np.array(self.robot.get_left_ee_pose(), dtype=np.float64)
         elif arm_tag == "right":
@@ -1513,15 +1552,19 @@ class Base_Task(gym.Env):
         arm_tag: ArmTag,
         target_pose: list | np.ndarray | sapien.Pose,
     ):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         return arm_tag, [Action(arm_tag, "move", target_pose=target_pose)]
 
     def close_gripper(self, arm_tag: ArmTag, pos: float = 0.0):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         return arm_tag, [Action(arm_tag, "close", target_gripper_pos=pos)]
 
     def open_gripper(self, arm_tag: ArmTag, pos: float = 1.0):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         return arm_tag, [Action(arm_tag, "open", target_gripper_pos=pos)]
 
     def back_to_origin(self, arm_tag: ArmTag):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if arm_tag == "left":
             return arm_tag, [Action(arm_tag, "move", self.robot.left_original_pose)]
         elif arm_tag == "right":
@@ -1529,6 +1572,7 @@ class Base_Task(gym.Env):
         return None, []
 
     def get_arm_pose(self, arm_tag: ArmTag):
+        arm_tag = self._resolve_arm_tag(arm_tag)
         if arm_tag == "left":
             return self.robot.get_left_ee_pose()
         elif arm_tag == "right":
