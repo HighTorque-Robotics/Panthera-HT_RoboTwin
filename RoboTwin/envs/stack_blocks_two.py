@@ -82,7 +82,7 @@ class stack_blocks_two(Base_Task):
         block_pose = block.get_pose().p
         arm_tag = ArmTag("left" if block_pose[0] < 0 else "right")
 
-        if self.last_gripper is not None and (self.last_gripper != arm_tag):
+        if (not self.single_arm_mode and self.last_gripper is not None and self.last_gripper != arm_tag):
             self.move(
                 self.grasp_actor(block, arm_tag=arm_tag, pre_grasp_dis=0.09),  # arm_tag
                 self.back_to_origin(arm_tag=arm_tag.opposite),  # arm_tag.opposite

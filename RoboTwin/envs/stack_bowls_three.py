@@ -58,7 +58,7 @@ class stack_bowls_three(Base_Task):
         actor_pose = actor.get_pose().p
         arm_tag = ArmTag("left" if actor_pose[0] < 0 else "right")
 
-        if self.las_arm is None or arm_tag == self.las_arm:
+        if self.single_arm_mode or self.las_arm is None or arm_tag == self.las_arm:
             self.move(
                 self.grasp_actor(
                     actor,
