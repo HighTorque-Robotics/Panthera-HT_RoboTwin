@@ -1,11 +1,11 @@
-# Panthera dual-arm collection for lift_pot.
-panthera_mode: true
+# Panthera single-arm smoke collection for adjust_bottle.
+arm_mode: single
 render_freq: 0
-episode_num: 10
+episode_num: 1
 use_seed: false
 save_freq: 15
-embodiment: [panthera-6dof, panthera-6dof, 0.60]
-language_num: 100
+embodiment: [panthera-6dof]
+language_num: 1
 domain_randomization:
   random_background: false
   cluttered_table: false

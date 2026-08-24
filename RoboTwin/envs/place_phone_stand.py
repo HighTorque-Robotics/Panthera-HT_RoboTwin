@@ -85,6 +85,7 @@ class place_phone_stand(Base_Task):
                 arm_tag=arm_tag,
                 target_pose=stand_func_pose,
                 functional_point_id=0,
+                pre_dis=0.08,
                 dis=0,
                 constrain="align",
             ))

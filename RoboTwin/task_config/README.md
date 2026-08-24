@@ -1,49 +1,90 @@
 # Panthera 任务配置与采集验证
 
-本目录保存 Panthera 任务采集配置，并记录任务级采集验证进度。状态更新截至 2026-08-21。
+本目录保存 Panthera 任务采集配置，并记录任务级采集验证进度。状态更新截至 2026-08-25。
 
 ## 状态口径
 
 - `PASS`：至少有一个测试 seed 完成规划、任务成功判定、数据保存和指令生成。
 - “尚未通过”：在当前 smoke 边界内没有成功 episode；可能由规划、任务逻辑、物理稳定性或代码异常造成。
 - 单条 smoke 仅用于验证采集链路连通性，不代表所有随机化 seed 或大规模采集的成功率已经验证。
+- “未通过”表示在记录的限时 smoke 窗口内没有找到成功 seed，不等于已经证明任务无法完成。
 - 当前尚未通过的任务不应直接用于正式批量采集；修复后必须重新完成端到端回归。
 
 ## 双臂采集
 
 Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 6 个关节 + 1 个夹爪）。
 
-截至 2026-08-21，50 个任务中有 41 个至少成功采集过 1 条双臂 smoke。以下 9 个任务尚未通过：
+截至 2026-08-25，50 个任务中有 45 个至少成功采集过 1 条双臂 smoke。以下 5 个任务尚未通过：
 
 | 任务 | 当前现象 | 当前结论 |
 | --- | --- | --- |
-| `handover_mic` | 300 秒内 seed 0～111 连续失败，现有日志没有给出具体失败动作 | 尚未通过，需定位交接序列中的规划或成功判定失败 |
-| `lift_pot` | 300 秒内 seed 0～191 连续失败，现有日志没有给出具体失败动作 | 尚未通过，需定位双臂同步抓取或抬升阶段 |
-| `place_can_basket` | 多个 seed 出现 `target_pose cannot be None for move action` | 尚未通过，需定位未生成有效抓取位姿的具体动作 |
-| `place_cans_plasticbox` | 300 秒内 seed 0～17 连续失败，现有日志没有给出具体失败动作 | 尚未通过，需区分规划失败和最终位置判定失败 |
-| `place_dual_shoes` | seed 0～181 未成功；同时观察到规划失败和 `041_shoe` 初始物理不稳定 | 尚未通过，规划可达性与物体稳定性都需排查 |
-| `put_bottles_dustbin` | 多个 seed 出现 `list index out of range` | 尚未通过，优先修复动作列表下标异常 |
-| `open_microwave` | 原始手柄位置和姿态对 Panthera 存在结构性可达性问题 | 尚未通过；不建议通过放宽 Panthera 关节限位解决 |
-| `rotate_qrcode` | 精确对齐目标存在双臂 IK 失败；放宽姿态约束后释放物理结果不正确 | 尚未通过，需同时满足规划与最终物理姿态 |
-| `stack_bowls_three` | 已观察到右侧碗到中心堆叠目标在失败 seed 上不可达 | 尚未通过，需评估 Panthera 专用场景初始化范围 |
+| `handover_mic` | 300 秒内 seed 0～104 均未通过，未观察到代码异常 | 尚未通过，需定位交接序列中的具体规划或成功判定失败 |
+| `open_microwave` | 双臂 seed 0～60 系统性出现 `target_pose cannot be None for move action` | 尚未通过，原始手柄目标对 Panthera 存在结构性可达性问题；不建议放宽关节限位 |
+| `place_dual_shoes` | 300 秒内 seed 0～144 均未通过；同时观察到规划失败、`041_shoe` 初始不稳定和一次空目标位姿 | 尚未通过，规划可达性与物体初始化稳定性都需排查 |
+| `rotate_qrcode` | 300 秒内 seed 0～154 均未通过，未观察到代码异常 | 尚未通过，需定位精确对齐动作的双臂规划边界，同时保持最终物理姿态正确 |
+| `stack_bowls_three` | 300 秒内 seed 0～184 均未通过；以规划失败为主，偶发空目标位姿 | 尚未通过，需定位失败动作并评估 Panthera 专用目标或初始化范围 |
 
-其余 41 个任务都至少通过过 1 条双臂 smoke。其中 `click_alarmclock` 和 `click_bell` 在 Panthera 专用按压路径修复后完成了双臂端到端回归。
+其余 45 个任务都至少通过过 1 条双臂 smoke。其中 `click_alarmclock` 和 `click_bell` 在 Panthera 专用按压路径修复后完成了双臂端到端回归；此前未通过的 `place_can_basket`、`place_cans_plasticbox` 和 `put_bottles_dustbin` 已分别以 seed 17、11、17 完成端到端采集。
+
+`lift_pot` 已通过 Panthera 双臂端到端回归。Panthera 模式仅启用锅模型 0，并将双臂抓取位置沿手指方向深入 10 mm；锅的 XY 位置与旋转随机化仍保留。锅模型 1 的锅柄更低，当前侧向预抓取会使 Panthera 左臂第 4 关节到达约 1.6000 rad 上限，直接进入最终位姿还会推撞锅体，因此暂不用于 Panthera 采集。该限制不影响其他 embodiment 的原始模型随机逻辑。
+
+此前重点验证的双臂协调任务中，`grab_roller`、`handover_block`、`hanging_mug`、`lift_pot`、`pick_dual_bottles`、`place_cans_plasticbox` 和 `put_bottles_dustbin` 已通过；`handover_mic` 和 `place_dual_shoes` 尚未通过。仓库没有独立的“协调任务”标签，这里的分类依据任务语义和左右臂动作序列。
 
 ## 单臂采集
 
 单臂模式只初始化一台居中的 `panthera-6dof`，动作维度为 7（6 个关节 + 1 个夹爪）。当前代码允许对 `script/collect_data.py` 中明确登记的 32 个单臂语义任务使用 `<task>_panthera_single` 配置名。
 
-历史 smoke 覆盖了其中 31 个任务，27 个任务至少成功采集过 1 条单臂数据。当前仍需处理或重新验证的 5 个任务如下：
+截至 2026-08-25，32 个单臂任务均已执行过 smoke，其中 31 个至少成功采集过 1 条单臂数据。当前仅 `open_microwave` 尚未通过：
 
-| 任务 | 当前状态 |
-| --- | --- |
-| `adjust_bottle` | 已通过双臂 smoke，但尚未完成单臂 smoke |
-| `click_alarmclock` | 历史单臂 smoke 失败；按压逻辑修复后只完成了双臂回归，单臂尚未重新验证 |
-| `click_bell` | 历史单臂 smoke 失败；按压逻辑修复后只完成了双臂回归，单臂尚未重新验证 |
-| `open_microwave` | 单臂和双臂均未通过，存在结构性可达性问题 |
-| `place_phone_stand` | 单臂未通过；放置规划与手机携持、释放的物理稳定性尚未同时满足 |
+| 任务 | 当前现象 | 当前结论 |
+| --- | --- | --- |
+| `open_microwave` | 单臂 seed 0～61 系统性出现 `target_pose cannot be None for move action` | 单臂和双臂均尚未通过，优先定位手柄目标位姿与 Panthera 工作空间的结构性冲突 |
 
-这里的“尚未重新验证”不同于“已确认无法完成”：`click_alarmclock`、`click_bell` 和 `adjust_bottle` 需要补跑单臂回归后才能更新支持状态。
+`adjust_bottle` 已完成 5 条单臂完整采集与文件级检查；`click_alarmclock`、`click_bell` 和 `place_phone_stand` 的单臂回归也已通过。`rotate_qrcode` 和 `stack_bowls_three` 当前均为单臂通过、双臂尚未通过，说明问题集中在双臂配置下的规划或场景边界，而不是任务链路整体失效。
+
+## 完整配置状态索引
+
+双臂 `PASS`（45）：
+
+```text
+adjust_bottle, beat_block_hammer, blocks_ranking_rgb, blocks_ranking_size,
+click_alarmclock, click_bell, dump_bin_bigbin, grab_roller, handover_block,
+hanging_mug, lift_pot, move_can_pot, move_pillbottle_pad, move_playingcard_away,
+move_stapler_pad, open_laptop, pick_diverse_bottles, pick_dual_bottles,
+place_a2b_left, place_a2b_right, place_bread_basket, place_bread_skillet,
+place_burger_fries, place_can_basket, place_cans_plasticbox,
+place_container_plate, place_empty_cup, place_fan, place_mouse_pad,
+place_object_basket, place_object_scale, place_object_stand, place_phone_stand,
+place_shoe, press_stapler, put_bottles_dustbin, put_object_cabinet, scan_object,
+shake_bottle, shake_bottle_horizontally, stack_blocks_three, stack_blocks_two,
+stack_bowls_two, stamp_seal, turn_switch
+```
+
+双臂尚未通过（5）：
+
+```text
+handover_mic, open_microwave, place_dual_shoes, rotate_qrcode,
+stack_bowls_three
+```
+
+单臂 `PASS`（31）：
+
+```text
+adjust_bottle, beat_block_hammer, blocks_ranking_rgb, blocks_ranking_size,
+click_alarmclock, click_bell, move_can_pot, move_pillbottle_pad,
+move_playingcard_away, move_stapler_pad, open_laptop, place_a2b_left,
+place_a2b_right, place_container_plate, place_empty_cup, place_fan,
+place_mouse_pad, place_object_scale, place_object_stand, place_phone_stand,
+place_shoe, press_stapler, rotate_qrcode, shake_bottle,
+shake_bottle_horizontally, stack_blocks_three, stack_blocks_two,
+stack_bowls_three, stack_bowls_two, stamp_seal, turn_switch
+```
+
+单臂尚未通过（1）：
+
+```text
+open_microwave
+```
 
 ## 配置命名与生成边界
 
@@ -51,9 +92,13 @@ Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 
 - 单臂配置入口：`<task>_panthera_single`。
 - 对已登记的单臂任务，采集入口会从对应的 `<task>_panthera.yml` 派生单臂配置，统一设置 `arm_mode: single` 和单个 Panthera embodiment；不需要为每个任务复制一份内容相同的 YAML。
 - 只有确实需要覆盖基础参数的任务才应保留显式 `*_panthera_single.yml`，避免重复配置。
+- `adjust_bottle_panthera_single.yml` 是保留的显式单臂采集配置，记录该任务已经实测的单臂 smoke 参数。
 
 ## 验证依据
 
 - 2026-08-20 单臂/双臂 smoke：`RoboTwin/data/panthera_single_dual_smoke_20260820/results.tsv`。
 - 2026-08-21 对此前未覆盖的 19 个任务补做双臂 smoke：13 个通过，6 个在 300 秒限制内未找到成功 seed。
+- 2026-08-22 `lift_pot` 修复后固定种子 0、2、7 均通过规划和原生成功判定；完整 seed 0 数据保存在 `RoboTwin/data/dual_arm_coordination_smoke_20260821/lift_pot/lift_pot_panthera/`，包含 130 帧 HDF5、三路视频、轨迹、场景信息和指令。
+- 2026-08-24 至 25 对历史缺口和任务局部修复补做 13 个配置回归：7 个通过、6 个在各自 300 秒窗口内未通过。通过项为 `place_phone_stand` 单臂/双臂、`click_alarmclock` 单臂、`click_bell` 单臂、`place_can_basket` 双臂、`place_cans_plasticbox` 双臂和 `put_bottles_dustbin` 双臂。
+- 最新补测数据保存在 `RoboTwin/data/panthera_gap_smoke_20260824/`。通过项均完成 HDF5、视频、场景信息和指令的文件级检查；其中 `put_bottles_dustbin` 三路视频与 HDF5 均为 721 帧。
 - `OIDN invalid handle` 是采集过程中观察到的渲染器警告，不作为任务成功或失败的判据。
