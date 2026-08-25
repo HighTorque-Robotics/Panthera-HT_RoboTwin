@@ -11,7 +11,9 @@
 - 通过 [`RoboTwin/policy/README.md`](RoboTwin/policy/README.md) 转换 ACT、Pi0、Pi0.5、GO1、RDT、TinyVLA、DexVLA、DP 和 DP3 数据。
 - 任务采集配置具体看 [`RoboTwin/task_config/README.md`](RoboTwin/task_config/README.md) 
 
-![Panthera RoboTwin Demo](assets/demo.gif)
+  <p align="center">
+    <img src="assets/demo.gif" alt="Panthera RoboTwin Demo" width="800" height="450">
+  </p>
 
 ## 仓库目录
 
