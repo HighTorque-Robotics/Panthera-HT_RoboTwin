@@ -1,4 +1,4 @@
-# RoboTwin Panthera
+# Panthera-HT_RoboTwin
 
 本仓库基于 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)，面向 Panthera 六自由度机械臂，提供仿真、专家数据采集、轨迹回放和多 Policy 数据转换能力。Panthera 适配和维护由 [Yinghao Ho](https://github.com/CherrySama) from [HighTorque Robotics](https://github.com/HighTorque-Robotics) 完成。
 
