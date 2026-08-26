@@ -29,7 +29,6 @@ class lift_pot(Base_Task):
     def play_once(self):
         left_arm_tag = ArmTag("left")
         right_arm_tag = ArmTag("right")
-        grasp_dis = -0.01 if self.panthera_mode else 0
         # Close both left and right grippers to half position
         self.move(
             self.close_gripper(left_arm_tag, pos=0.5),
@@ -41,14 +40,12 @@ class lift_pot(Base_Task):
                 self.pot,
                 left_arm_tag,
                 pre_grasp_dis=0.035,
-                grasp_dis=grasp_dis,
                 contact_point_id=0,
             ),
             self.grasp_actor(
                 self.pot,
                 right_arm_tag,
                 pre_grasp_dis=0.035,
-                grasp_dis=grasp_dis,
                 contact_point_id=1,
             ),
         )
