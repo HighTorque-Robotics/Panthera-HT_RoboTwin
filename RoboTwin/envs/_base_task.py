@@ -32,6 +32,8 @@ from typing import Optional, Literal
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
 
+PANTHERA_DEFAULT_GRASP_DIS = -0.02
+
 
 class Base_Task(gym.Env):
 
@@ -1345,6 +1347,8 @@ class Base_Task(gym.Env):
         if not self.plan_success:
             return None, []
         arm_tag = self._resolve_arm_tag(arm_tag)
+        if grasp_dis == 0 and "panthera-6dof" in str(self.robot_type):
+            grasp_dis = PANTHERA_DEFAULT_GRASP_DIS
         if self.need_plan == False:
             if pre_grasp_dis == grasp_dis:
                 return arm_tag, [
