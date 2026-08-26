@@ -2,7 +2,7 @@
 
 本仓库基于 [RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin)，面向 Panthera 六自由度机械臂，提供仿真、专家数据采集、轨迹回放和多 Policy 数据转换能力。Panthera 适配和维护由 [Yinghao Ho](https://github.com/CherrySama) from [HighTorque Robotics](https://github.com/HighTorque-Robotics) 完成。
 
-当前适配支持：
+当前仓库支持：
 
 - 双臂 Panthera：左右两台机械臂，原生 14 维动作；
 - 单臂 Panthera：场景只初始化一台居中的机械臂，原生 7 维动作（6 个关节 + 1 个夹爪）；
@@ -234,9 +234,7 @@ test -d assets/background_texture
 conda activate RoboTwin
 python -u script/collect_data.py \
   move_pillbottle_pad \
-  move_pillbottle_pad_panthera \
-  --episode-num 1 \
-  --save-path data/quick_start_smoke
+  move_pillbottle_pad_panthera
 ```
 
 ### 3.2 采集单臂数据
@@ -246,9 +244,7 @@ python -u script/collect_data.py \
 ```bash
 python -u script/collect_data.py \
   move_pillbottle_pad \
-  move_pillbottle_pad_panthera_single \
-  --episode-num 1 \
-  --save-path data/quick_start_smoke
+  move_pillbottle_pad_panthera_single
 ```
 
 `blocks_ranking_rgb` 当前也提供双臂配置：
@@ -256,15 +252,13 @@ python -u script/collect_data.py \
 ```bash
 python -u script/collect_data.py \
   blocks_ranking_rgb \
-  blocks_ranking_rgb_panthera \
-  --episode-num 1 \
-  --save-path data/quick_start_smoke
+  blocks_ranking_rgb_panthera
 ```
 
 采集结果位于：
 
 ```text
-data/quick_start_smoke/<task>/<task_config>/
+data/<task>/<task_config>/
 ├── data/episodeN.hdf5
 ├── _traj_data/episodeN.pkl
 ├── instructions/episodeN.json
@@ -320,6 +314,7 @@ python policy/data_convert.py --policy <act|pi0|pi05|go1|rdt|tinyvla|dexvla|dp|d
 - 当前配置文件使用 `.yml`，例如 `blocks_ranking_rgb_panthera.yml`，不是 `.yaml`。
 - 单臂和双臂不能混用轨迹、seed 或 HDF5；回放会校验 schema、动作维度和轨迹模式。
 - 采集失败时先看终端中的物体稳定性、规划和任务成功条件日志。只有配置显式启用 `physics_validation` 时才会生成对应报告并增加物理准入；默认采集不会生成该目录。
+- 如果 Panthera 夹爪能短暂抬起杯子/碗但随后滑落，先检查腕部视频中的夹持深度。当前临时对照显示，将默认抓取深度从 `grasp_dis=0` 增加到 `grasp_dis=-0.02`（沿抓取方向深入约 2 cm）后，`hanging_mug` 和 `stack_bowls_three` 的夹持稳定性明显改善。该补偿尚未作为全局默认参数合入，不能直接修改 `tool_link` 或关节限位；正式采用前应在目标任务上检查是否穿透、推偏并完成回归。
 - `DP3` 要求原始 HDF5 含非空 `/pointcloud`；默认 RGB 采集配置通常不会满足这一条件。
 
 ### Instruction 和 Policy
@@ -330,8 +325,7 @@ python policy/data_convert.py --policy <act|pi0|pi05|go1|rdt|tinyvla|dexvla|dp|d
 
 ### 发布前检查
 
-- 2026-08-26 已在当前主机的全新 Conda 环境完成单臂 RGB clean-room smoke；这不是全新机器验证，也尚未覆盖双臂、点云和所有随机化 seed。
-- 当前只对已列出的 Panthera 任务做过真实验证，不能据此推断所有 RoboTwin 任务都支持单臂。
+- 当前只对已列出的 Panthera 任务做过真实验证，不能据此推断所有 RoboTwin 任务都支持单臂，例如一些双臂协调的任务便没有加入单臂采集的配置。
 - 本仓库不包含 Panthera 真机 SDK、真机控制或 sim-to-real 安全保证。
 
 ## License
