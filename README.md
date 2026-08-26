@@ -314,7 +314,7 @@ python policy/data_convert.py --policy <act|pi0|pi05|go1|rdt|tinyvla|dexvla|dp|d
 - 当前配置文件使用 `.yml`，例如 `blocks_ranking_rgb_panthera.yml`，不是 `.yaml`。
 - 单臂和双臂不能混用轨迹、seed 或 HDF5；回放会校验 schema、动作维度和轨迹模式。
 - 采集失败时先看终端中的物体稳定性、规划和任务成功条件日志。只有配置显式启用 `physics_validation` 时才会生成对应报告并增加物理准入；默认采集不会生成该目录。
-- 如果 Panthera 夹爪能短暂抬起杯子/碗但随后滑落，先检查腕部视频中的夹持深度。当前临时对照显示，将默认抓取深度从 `grasp_dis=0` 增加到 `grasp_dis=-0.02`（沿抓取方向深入约 2 cm）后，`hanging_mug` 和 `stack_bowls_three` 的夹持稳定性明显改善。该补偿尚未作为全局默认参数合入，不能直接修改 `tool_link` 或关节限位；正式采用前应在目标任务上检查是否穿透、推偏并完成回归。
+- 如果 Panthera 夹爪能短暂抬起杯子/碗但随后滑落，先检查腕部视频中的夹持深度。当前 `_base_task.py` 已对 Panthera 的默认抓取调用统一使用 `grasp_dis=-0.02`（沿抓取方向深入约 2 cm）；`hanging_mug`、`stack_bowls_three` 和 `lift_pot` 回归采集均通过。该值是 Panthera 专用默认补偿，不要再直接修改 `tool_link` 或关节限位；新增任务仍应检查是否穿透、推偏并完成回归。`lift_pot_panthera.yml` 中的 `panthera_mode: true` 继续用于固定已验证的锅模型，不负责抓取深度。
 - `DP3` 要求原始 HDF5 含非空 `/pointcloud`；默认 RGB 采集配置通常不会满足这一条件。
 
 ### Instruction 和 Policy
