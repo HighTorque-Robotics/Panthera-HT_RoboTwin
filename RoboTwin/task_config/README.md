@@ -44,7 +44,7 @@ Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 
 
 ## 完整配置状态索引
 
-双臂 `PASS`（45）：
+双臂 `PASS`（46）：
 
 ```text
 adjust_bottle, beat_block_hammer, blocks_ranking_rgb, blocks_ranking_size,
@@ -57,14 +57,13 @@ place_container_plate, place_empty_cup, place_fan, place_mouse_pad,
 place_object_basket, place_object_scale, place_object_stand, place_phone_stand,
 place_shoe, press_stapler, put_bottles_dustbin, put_object_cabinet, scan_object,
 shake_bottle, shake_bottle_horizontally, stack_blocks_three, stack_blocks_two,
-stack_bowls_two, stamp_seal, turn_switch
+stack_bowls_three, stack_bowls_two, stamp_seal, turn_switch
 ```
 
-双臂尚未通过（5）：
+双臂尚未通过（4）：
 
 ```text
-handover_mic, open_microwave, place_dual_shoes, rotate_qrcode,
-stack_bowls_three
+handover_mic, open_microwave, place_dual_shoes, rotate_qrcode
 ```
 
 单臂 `PASS`（31）：
@@ -93,12 +92,3 @@ open_microwave
 - 对已登记的单臂任务，采集入口会从对应的 `<task>_panthera.yml` 派生单臂配置，统一设置 `arm_mode: single` 和单个 Panthera embodiment；不需要为每个任务复制一份内容相同的 YAML。
 - 只有确实需要覆盖基础参数的任务才应保留显式 `*_panthera_single.yml`，避免重复配置。
 - `adjust_bottle_panthera_single.yml` 是保留的显式单臂采集配置，记录该任务已经实测的单臂 smoke 参数。
-
-## 验证依据
-
-- 2026-08-20 单臂/双臂 smoke：`RoboTwin/data/panthera_single_dual_smoke_20260820/results.tsv`。
-- 2026-08-21 对此前未覆盖的 19 个任务补做双臂 smoke：13 个通过，6 个在 300 秒限制内未找到成功 seed。
-- 2026-08-22 `lift_pot` 修复后固定种子 0、2、7 均通过规划和原生成功判定；完整 seed 0 数据保存在 `RoboTwin/data/dual_arm_coordination_smoke_20260821/lift_pot/lift_pot_panthera/`，包含 130 帧 HDF5、三路视频、轨迹、场景信息和指令。
-- 2026-08-24 至 25 对历史缺口和任务局部修复补做 13 个配置回归：7 个通过、6 个在各自 300 秒窗口内未通过。通过项为 `place_phone_stand` 单臂/双臂、`click_alarmclock` 单臂、`click_bell` 单臂、`place_can_basket` 双臂、`place_cans_plasticbox` 双臂和 `put_bottles_dustbin` 双臂。
-- 最新补测数据保存在 `RoboTwin/data/panthera_gap_smoke_20260824/`。通过项均完成 HDF5、视频、场景信息和指令的文件级检查；其中 `put_bottles_dustbin` 三路视频与 HDF5 均为 721 帧。
-- `OIDN invalid handle` 是采集过程中观察到的渲染器警告，不作为任务成功或失败的判据。
