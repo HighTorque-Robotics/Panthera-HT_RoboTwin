@@ -14,13 +14,23 @@ import h5py
 import numpy as np
 
 
-CAMERAS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
-MOTORS = (
+DUAL_CAMERAS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
+DUAL_MOTORS = (
     *(f"left_joint_{i}" for i in range(6)),
     "left_gripper",
     *(f"right_joint_{i}" for i in range(6)),
     "right_gripper",
 )
+SINGLE_CAMERAS = ("cam_high", "cam_wrist")
+SINGLE_MOTORS = tuple(f"joint_{i}" for i in range(6)) + ("gripper",)
+
+
+def _decode_image_value(values: h5py.Dataset, index: int) -> np.ndarray:
+    encoded = values[index]
+    image = cv2.imdecode(np.frombuffer(bytes(encoded), np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError(f"{values.name}[{index}] JPEG 解码失败")
+    return image
 
 
 def _load_images(ep: h5py.File, camera: str) -> np.ndarray:
@@ -30,9 +40,7 @@ def _load_images(ep: h5py.File, camera: str) -> np.ndarray:
     else:
         images = []
         for index, encoded in enumerate(values):
-            image = cv2.imdecode(np.frombuffer(bytes(encoded), np.uint8), cv2.IMREAD_COLOR)
-            if image is None:
-                raise ValueError(f"{camera}[{index}] JPEG 解码失败")
+            image = _decode_image_value(values, index)
             # RoboTwin passes its RGB array directly to OpenCV when encoding;
             # imdecode therefore already restores the original numeric order.
             images.append(image)
@@ -42,11 +50,39 @@ def _load_images(ep: h5py.File, camera: str) -> np.ndarray:
     return images
 
 
-def _load_episode(path: Path) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray], str]:
+def _image_shape(values: h5py.Dataset, camera: str) -> tuple[int, int, int]:
+    if values.ndim == 4:
+        shape = values.shape[1:]
+    else:
+        shape = _decode_image_value(values, 0).shape
+    if len(shape) != 3 or shape[-1] != 3:
+        raise ValueError(f"{camera} 图像 shape 非法: {shape}")
+    return tuple(shape)
+
+
+def _load_episode(
+    path: Path, *, load_images: bool = True
+) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray], str, str]:
     with h5py.File(path, "r") as ep:
         state = np.asarray(ep["/observations/qpos"][:], dtype=np.float32)
         action = np.asarray(ep["/action"][:], dtype=np.float32)
-        images = {camera: _load_images(ep, camera) for camera in CAMERAS}
+        image_names = tuple(ep["/observations/images"].keys())
+        if set(image_names) == set(SINGLE_CAMERAS):
+            cameras = SINGLE_CAMERAS
+            arm_mode = "single"
+        elif set(image_names) == set(DUAL_CAMERAS):
+            cameras = DUAL_CAMERAS
+            arm_mode = "dual"
+        else:
+            raise ValueError(f"{path}: 不支持的相机集合: {image_names}")
+        if load_images:
+            images = {camera: _load_images(ep, camera) for camera in cameras}
+        else:
+            images = {}
+            for camera in cameras:
+                values = ep[f"/observations/images/{camera}"]
+                if values.shape[0] != state.shape[0] or _image_shape(values, camera)[-1] != 3:
+                    raise ValueError(f"{path}: {camera} 图像帧数或 shape 非法")
     instruction_path = path.parent / "instructions.json"
     try:
         instruction_data = json.loads(instruction_path.read_text(encoding="utf-8"))
@@ -56,22 +92,25 @@ def _load_episode(path: Path) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndar
         raise ValueError(f"{path}: 无法读取 instructions.json") from exc
     if not isinstance(instruction, str) or not instruction.strip():
         raise ValueError(f"{path}: instructions.json 中没有非空指令")
-    if state.ndim != 2 or action.ndim != 2 or state.shape[1] != 14 or action.shape[1] != 14:
-        raise ValueError(f"{path}: state/action 必须为 [N,14]，实际为 {state.shape}, {action.shape}")
+    expected_dim = 7 if arm_mode == "single" else 14
+    if state.ndim != 2 or action.ndim != 2 or state.shape[1] != expected_dim or action.shape[1] != expected_dim:
+        raise ValueError(f"{path}: state/action 必须为 [N,{expected_dim}]，实际为 {state.shape}, {action.shape}")
     if state.shape[0] != action.shape[0] or not np.isfinite(state).all() or not np.isfinite(action).all():
         raise ValueError(f"{path}: state/action 帧数不一致或含 NaN/Inf")
-    if len({state.shape[0], *(image.shape[0] for image in images.values())}) != 1:
+    if images and len({state.shape[0], *(image.shape[0] for image in images.values())}) != 1:
         raise ValueError(f"{path}: state/action/图像帧数不一致")
-    return state, action, images, instruction
+    return state, action, images, instruction, arm_mode
 
 
-def _features(images: dict[str, np.ndarray]) -> dict:
-    height, width = images[CAMERAS[0]].shape[1:3]
+def _features(images: dict[str, np.ndarray], arm_mode: str) -> dict:
+    cameras = SINGLE_CAMERAS if arm_mode == "single" else DUAL_CAMERAS
+    motors = SINGLE_MOTORS if arm_mode == "single" else DUAL_MOTORS
+    height, width = images[cameras[0]].shape[1:3]
     features = {
-        "observation.state": {"dtype": "float32", "shape": (14,), "names": [list(MOTORS)]},
-        "action": {"dtype": "float32", "shape": (14,), "names": [list(MOTORS)]},
+        "observation.state": {"dtype": "float32", "shape": (len(motors),), "names": [list(motors)]},
+        "action": {"dtype": "float32", "shape": (len(motors),), "names": [list(motors)]},
     }
-    for camera in CAMERAS:
+    for camera in cameras:
         height_i, width_i = images[camera].shape[1:3]
         if (height_i, width_i) != (height, width):
             raise ValueError("三路相机输出分辨率不一致")
@@ -111,30 +150,41 @@ class LeRobotDatasetWriter:
         self.output = output_root / repo_id
         if self.output.exists():
             shutil.rmtree(self.output)
-        state, action, images, _ = _load_episode(first_episode)
+        state, action, images, _, arm_mode = _load_episode(first_episode)
         del state, action
         self.dataset = LeRobotDataset.create(
             repo_id=repo_id,
             root=self.output,
             fps=fps,
             robot_type=robot_type,
-            features=_features(images),
+            features=_features(images, arm_mode),
             use_videos=False,
         )
 
     def add_episode(self, path: Path) -> None:
-        state, action, images, instruction = _load_episode(path)
-        for index in range(state.shape[0]):
-            frame = {
-                "observation.state": state[index],
-                "action": action[index],
-                "task": instruction,
-            }
-            for camera in CAMERAS:
-                frame[f"observation.images.{camera}"] = images[camera][index]
-            self.dataset.add_frame(frame)
+        state, action, _, instruction, arm_mode = _load_episode(path, load_images=False)
+        expected_mode = "single" if len(self.dataset.features["action"]["shape"]) == 1 and self.dataset.features["action"]["shape"][0] == 7 else "dual"
+        if arm_mode != expected_mode:
+            raise ValueError(f"{path}: arm_mode={arm_mode} 与数据集 schema={expected_mode} 不一致")
+        cameras = SINGLE_CAMERAS if arm_mode == "single" else DUAL_CAMERAS
+        with h5py.File(path, "r") as ep:
+            image_values = {camera: ep[f"/observations/images/{camera}"] for camera in cameras}
+            for index in range(state.shape[0]):
+                frame = {
+                    "observation.state": state[index],
+                    "action": action[index],
+                    "task": instruction,
+                }
+                for camera in cameras:
+                    values = image_values[camera]
+                    frame[f"observation.images.{camera}"] = (
+                        values[index]
+                        if values.ndim == 4
+                        else _decode_image_value(values, index)
+                    )
+                self.dataset.add_frame(frame)
         self._save_episode_without_dataset_concat()
-        del state, action, images
+        del state, action
 
     def _save_episode_without_dataset_concat(self) -> None:
         """Persist one episode without growing LeRobot's in-memory dataset.

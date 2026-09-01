@@ -168,6 +168,20 @@ def _instruction_path(dataset: RobotTwinDataset, episode: EpisodeRef) -> Path:
     return path
 
 
+def _read_arm_mode(path: Path) -> str:
+    with h5py.File(path, "r") as handle:
+        mode = handle.attrs.get("arm_mode")
+        if isinstance(mode, bytes):
+            mode = mode.decode("utf-8")
+        if mode in {"single", "dual"}:
+            return mode
+        if "/joint_action/arm" in handle:
+            return "single"
+        if "/joint_action/left_arm" in handle and "/joint_action/right_arm" in handle:
+            return "dual"
+    raise InputError(f"无法识别数据的 arm_mode: {path}")
+
+
 def _link_episodes(
     dataset: RobotTwinDataset,
     raw_root: Path,
@@ -244,6 +258,7 @@ class OpenPiPantheraAdapter:
             / "convert_robotwin_to_lerobot.py",
         )
 
+        first_arm_mode = _read_arm_mode(dataset.episodes[0].source_path)
         with tempfile.TemporaryDirectory(prefix=f"robotwin_{self.name}_") as temp_dir:
             temp_root = Path(temp_dir)
             raw_root = temp_root / "raw"
@@ -267,7 +282,7 @@ class OpenPiPantheraAdapter:
                             repo_id=output.name,
                             first_episode=processed_file,
                             fps=args.fps,
-                            robot_type="panthera-6dof-dual",
+                            robot_type=f"panthera-6dof-{first_arm_mode}",
                         )
                     writer.add_episode(processed_file)
                     shutil.rmtree(processed_root)
@@ -281,7 +296,7 @@ class OpenPiPantheraAdapter:
             json.dumps(
                 {
                     "policy": self.name,
-                    "robot_type": "panthera-6dof-dual",
+                    "robot_type": f"panthera-6dof-{first_arm_mode}",
                     "action_alignment": "next_state",
                     "state_semantics": "state_target",
                     "fps": args.fps,
@@ -443,7 +458,7 @@ class ActAdapter:
             if (
                 action_shape != qpos_shape
                 or len(action_shape) != 2
-                or action_shape[1] != 14
+                or action_shape[1] not in (7, 14)
             ):
                 raise AdapterError(
                     f"ACT 转换结果维度错误: {episode_path}: "
@@ -463,12 +478,16 @@ class ActAdapter:
                 {
                     "policy": "act",
                     "format": "act-hdf5",
-                    "robot_type": "panthera-6dof-dual",
-                    "action_dim": 14,
+                    "robot_type": (
+                        "panthera-6dof-single"
+                        if action_shape[1] == 7
+                        else "panthera-6dof-dual"
+                    ),
+                    "action_dim": action_shape[1],
                     "action_alignment": "next_state",
                     "state_semantics": "state_target",
                     "camera_mapping": CAMERA_MAPPING,
-                    "camera_names": ["cam_high", "cam_right_wrist", "cam_left_wrist"],
+                    "camera_names": (["cam_high", "cam_wrist"] if action_shape[1] == 7 else ["cam_high", "cam_right_wrist", "cam_left_wrist"]),
                     "image_size": [480, 640],
                     "fps": args.fps if args.fps and args.fps > 0 else None,
                     "episodes": converted_episodes,
