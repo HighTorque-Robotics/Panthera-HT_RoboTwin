@@ -165,13 +165,15 @@ python -m pip check
 
 ### 1.3 `RoboTwinData` 转换环境
 
+该环境只负责 HDF5、图像、Zarr 和 LeRobot 数据转换，不运行 SAPIEN/CuRobo，不需要 `nvcc` 或 PyTorch3D。以下命令从内层 `RoboTwin/` 目录执行。
+
 ```bash
 conda create -n RoboTwinData python=3.11.15 -y
 conda activate RoboTwinData
 python -m pip install torch==2.6.0 torchvision==0.21.0 \
   --index-url https://download.pytorch.org/whl/cu124
 python -m pip install \
-  numpy==1.26.4 h5py==3.16.0 opencv-python==4.11.0.86 \
+  numpy==1.26.4 h5py==3.16.0 opencv-python-headless==4.11.0.86 \
   PyYAML==6.0.3 Pillow==11.0.0 datasets==3.2.0 \
   pyarrow==18.1.0 tqdm==4.67.1 zarr==2.18.4 numcodecs==0.13.1 \
   huggingface-hub==0.28.1 diffusers==0.31.0 rerun-sdk==0.21.0 \
@@ -180,13 +182,35 @@ python -m pip install \
   "lerobot @ git+https://github.com/huggingface/lerobot.git@a445d9c9da6bea99a8972daa4fe1fdd053d711d2"
 ```
 
-Zarr 必须保持 2.x；LeRobot 必须固定到已验证的 commit。检查：
+数据转换不需要 OpenCV GUI，因此不要同时安装 `opencv-python` 和 `opencv-python-headless`。Zarr 必须保持 2.x；LeRobot 必须固定到已验证的 commit。检查：
 
 ```bash
-python -c "import torch, h5py, cv2, zarr, lerobot, transformers; print(torch.__version__, zarr.__version__)"
+python -c "import torch, h5py, cv2, zarr, lerobot, transformers; print('torch=', torch.__version__); print('cuda=', torch.version.cuda); print('cv2=', cv2.__version__); print('zarr=', zarr.__version__)"
 python policy/data_convert.py --policy act --help
 python -m pip check
 ```
+
+如果默认 pip 镜像返回 `pyarrow` 的 HTTP 403，可临时改用官方 PyPI：
+
+```bash
+PIP_CONFIG_FILE=/dev/null python -m pip install \
+  --index-url https://pypi.org/simple pyarrow==18.1.0
+```
+
+如果 LeRobot 的 GitHub clone 遇到 TLS/`gnutls_handshake` 错误，可先用 HTTP/1.1 克隆并固定 commit，再从本地目录安装：
+
+```bash
+LEROBOT_TMP=$(mktemp -d /tmp/lerobot-readme-test-XXXXXX)
+git -c http.version=HTTP/1.1 clone --depth 1 \
+  https://github.com/huggingface/lerobot.git "$LEROBOT_TMP/lerobot"
+git -C "$LEROBOT_TMP/lerobot" fetch --depth 1 origin \
+  a445d9c9da6bea99a8972daa4fe1fdd053d711d2
+git -C "$LEROBOT_TMP/lerobot" checkout --detach \
+  a445d9c9da6bea99a8972daa4fe1fdd053d711d2
+python -m pip install "$LEROBOT_TMP/lerobot"
+```
+
+2026-09-01 在全新 `RoboTwinData` 环境中，使用双臂 `stack_bowls_three` 数据完成了 ACT、Pi0、Pi0.5、DP 和 GO1 的单条转换 smoke。ACT 输出为 14 维 HDF5；Pi0、Pi0.5 和 GO1 输出为 Panthera 双臂 LeRobot 数据；DP 输出为 14 维 Zarr。Pi0/Pi0.5/GO1 的单条图像 parquet 约 494 MB，全量转换前请确认磁盘空间。GO1 当前已支持双臂，单臂尚未适配。
 
 ## 2. 准备仿真资产
 
@@ -316,6 +340,8 @@ python policy/data_convert.py --policy <act|pi0|pi05|go1|rdt|tinyvla|dexvla|dp|d
 - 采集失败时先看终端中的物体稳定性、规划和任务成功条件日志。只有配置显式启用 `physics_validation` 时才会生成对应报告并增加物理准入；默认采集不会生成该目录。
 - 如果 Panthera 夹爪能短暂抬起杯子/碗但随后滑落，先检查腕部视频中的夹持深度。当前 `_base_task.py` 已对 Panthera 的默认抓取调用统一使用 `grasp_dis=-0.02`（沿抓取方向深入约 2 cm）；`hanging_mug`、`stack_bowls_three` 和 `lift_pot` 回归采集均通过。该值是 Panthera 专用默认补偿，不要再直接修改 `tool_link` 或关节限位；新增任务仍应检查是否穿透、推偏并完成回归。`lift_pot_panthera.yml` 中的 `panthera_mode: true` 继续用于固定已验证的锅模型，不负责抓取深度。
 - `DP3` 要求原始 HDF5 含非空 `/pointcloud`；默认 RGB 采集配置通常不会满足这一条件。
+- 若 `pip check` 报 `opencv-python-headless` 要求 `numpy>=2`，说明安装到了 OpenCV 5；卸载普通/错误版本后固定 `opencv-python-headless==4.11.0.86`，不要升级本项目的 `numpy==1.26.4`。
+- 数据转换的 LeRobot 输出会展开图像并显著增大体积；单条 576 帧双臂 smoke 约 494 MB 是当前实测量级。
 
 ### Instruction 和 Policy
 
