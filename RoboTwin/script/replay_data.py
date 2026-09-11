@@ -9,6 +9,7 @@ stage.  This avoids interpolating the down-sampled HDF5 drive targets.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -20,7 +21,13 @@ ROOT_PATH = Path(__file__).resolve().parents[1]
 if str(ROOT_PATH) not in sys.path:
     sys.path.insert(0, str(ROOT_PATH))
 
-from script.collect_data import prepare_task_and_args  # noqa: E402
+from script.collect_data import (  # noqa: E402
+    COLLECTION_MANIFEST_SCHEMA,
+    COLLECTION_MANIFEST_NAME,
+    collection_provenance,
+    prepare_task_and_args,
+    validate_runtime_asset_provenance,
+)
 
 
 EPISODE_PATTERN = re.compile(r"episode(?P<index>\d+)\.hdf5$")
@@ -127,6 +134,91 @@ def validate_dense_trajectory(traj_data: dict, arm_mode: str, traj_path: Path) -
         raise ReplayInputError(f"Native trajectory {traj_path} has empty planner paths")
 
 
+def validate_collection_provenance(
+    args: dict,
+    raw_root: Path,
+    episode_index: int,
+    traj_path: Path,
+    episode_path: Path,
+    *,
+    allow_mismatch: bool = False,
+) -> dict | None:
+    """Reject silent replay against a different code/config/asset snapshot."""
+    manifest_path = raw_root / COLLECTION_MANIFEST_NAME
+    if not manifest_path.is_file():
+        print(
+            f"Warning: {manifest_path} is missing; this legacy trajectory has "
+            "no recorded environment fingerprint and cannot be verified."
+        )
+        return None
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReplayInputError(f"Invalid collection manifest {manifest_path}: {exc}") from exc
+
+    recorded = manifest.get("provenance", {})
+    if manifest.get("schema") != COLLECTION_MANIFEST_SCHEMA:
+        raise ReplayInputError(
+            f"Unsupported collection manifest schema: {manifest.get('schema')!r}"
+        )
+    current = collection_provenance(args)
+    if manifest.get("provenance_capture") == "post_hoc_unverified":
+        print(
+            "Warning: this manifest was created after artifacts already existed; "
+            "it can detect future drift but does not prove the original collection environment."
+        )
+    if recorded.get("fingerprint") != current["fingerprint"]:
+        recorded_files = recorded.get("files", {})
+        current_files = current.get("files", {})
+        changed_files = sorted(
+            path
+            for path in set(recorded_files) | set(current_files)
+            if recorded_files.get(path) != current_files.get(path)
+        )
+        changed_settings = recorded.get("settings") != current.get("settings")
+        changed_packages = recorded.get("package_versions") != current.get("package_versions")
+        changed_submodules = recorded.get("git_submodules") != current.get("git_submodules")
+        detail = (
+            f"changed_files={changed_files}, changed_settings={changed_settings}, "
+            f"changed_packages={changed_packages}, changed_submodules={changed_submodules}"
+        )
+        if not allow_mismatch:
+            raise ReplayInputError(
+                "Collection environment fingerprint mismatch; refusing silent "
+                f"dense replay ({detail}). Use --allow-provenance-mismatch only "
+                "for an explicit diagnostic run."
+            )
+        print(f"Warning: forcing replay despite provenance mismatch: {detail}")
+
+    episode = manifest.get("episodes", {}).get(str(episode_index), {})
+    replay_validation = episode.get("replay_validation", {})
+    if replay_validation and replay_validation.get("passed") is not True:
+        raise ReplayInputError(
+            f"Manifest records episode {episode_index} dense replay as failed: "
+            f"{replay_validation}"
+        )
+    from script.collect_data import _sha256_file
+
+    recorded_hash = episode.get("dense_trajectory", {}).get("sha256")
+    if recorded_hash:
+        current_hash = _sha256_file(traj_path)
+        if current_hash != recorded_hash:
+            raise ReplayInputError(
+                f"Dense trajectory checksum mismatch: recorded={recorded_hash}, "
+                f"current={current_hash}, path={traj_path}"
+            )
+    recorded_hdf5_hash = episode.get("hdf5", {}).get("sha256")
+    if recorded_hdf5_hash:
+        current_hdf5_hash = _sha256_file(episode_path)
+        if current_hdf5_hash != recorded_hdf5_hash:
+            raise ReplayInputError(
+                f"HDF5 checksum mismatch: recorded={recorded_hdf5_hash}, "
+                f"current={current_hdf5_hash}, path={episode_path}"
+            )
+    return episode
+
+
 def _configure_viewer_args(
     args: dict,
     raw_root: Path,
@@ -154,6 +246,7 @@ def replay_episode(
     camera_xyz: list[float] | None = None,
     camera_rpy: list[float] | None = None,
     hold_viewer: bool = True,
+    allow_provenance_mismatch: bool = False,
 ) -> None:
     """Replay one raw RoboTwin episode using the native dense trajectory."""
 
@@ -176,12 +269,26 @@ def replay_episode(
     seed = load_episode_seed(paths["seed_path"], episode_index)
 
     task, args = prepare_task_and_args(task_name, task_config)
+    episode_record = validate_collection_provenance(
+        args,
+        raw_root,
+        episode_index,
+        paths["traj_path"],
+        paths["episode_path"],
+        allow_mismatch=allow_provenance_mismatch,
+    )
     _configure_viewer_args(args, raw_root, render_freq, camera_xyz, camera_rpy)
     validate_hdf5_schema(paths["episode_path"], args["arm_mode"])
 
     viewer = None
     try:
         task.setup_demo(now_ep_num=episode_index, seed=seed, **args)
+        try:
+            validate_runtime_asset_provenance(task, episode_record or {})
+        except RuntimeError as exc:
+            if not allow_provenance_mismatch:
+                raise ReplayInputError(str(exc)) from exc
+            print(f"Warning: forcing replay despite object asset mismatch: {exc}")
         viewer = getattr(task, "viewer", None)
         traj_data = task.load_tran_data(episode_index)
         validate_dense_trajectory(traj_data, args["arm_mode"], paths["traj_path"])
@@ -242,6 +349,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Close immediately after the replay instead of waiting for the Viewer window",
     )
+    parser.add_argument(
+        "--allow-provenance-mismatch",
+        action="store_true",
+        help="Explicitly replay even when code/config/asset hashes changed",
+    )
     return parser
 
 
@@ -255,6 +367,7 @@ def main() -> None:
             camera_xyz=parsed.camera_xyz,
             camera_rpy=parsed.camera_rpy,
             hold_viewer=not parsed.no_hold,
+            allow_provenance_mismatch=parsed.allow_provenance_mismatch,
         )
     except ReplayInputError as exc:
         parser.error(str(exc))

@@ -89,6 +89,13 @@ bash collect_data.sh ${task_name} ${task_config} ${gpu_id}
 # Example: bash collect_data.sh beat_block_hammer demo_randomized 0
 ```
 
+采集目录会生成 `collection_manifest.json`。每条 episode 只有在保存的 dense
+planner trajectory 使用相同 seed 重新回放并通过任务成功判定后，才会写入最终
+HDF5。manifest 记录任务/机器人关键代码、配置、URDF/SRDF、CuRobo 配置、运行库
+版本和轨迹/HDF5 校验和；`script/replay_data.py` 默认拒绝在环境指纹不一致时静默
+回放。旧数据没有 manifest 时仍可人工回放，但会明确标记为无法验证其原始采集
+环境。
+
 ## 2. Modify Task Config
 ☝️ See [RoboTwin 2.0 Tasks Configurations Doc](https://robotwin-platform.github.io/doc/usage/configurations.html) for more details.
 

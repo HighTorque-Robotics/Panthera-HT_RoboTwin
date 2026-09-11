@@ -15,6 +15,20 @@ class UnStableError(Exception):
         super().__init__(msg)
 
 
+def _record_asset_tree(owner, modeldir):
+    """Record object files actually loaded by a task for collection provenance."""
+    if isinstance(owner, sapien.Scene):
+        return
+    modeldir = Path(modeldir).resolve()
+    if not modeldir.is_dir():
+        return
+    registry = getattr(owner, "_collection_asset_files", None)
+    if registry is None:
+        registry = set()
+        owner._collection_asset_files = registry
+    registry.update(str(path.resolve()) for path in modeldir.rglob("*") if path.is_file())
+
+
 def preprocess(scene, pose: sapien.Pose) -> tuple[sapien.Scene, sapien.Pose]:
     """Add entity to scene. Add bias to z axis if scene is not sapien.Scene."""
     if isinstance(scene, sapien.Scene):
@@ -400,6 +414,8 @@ def create_obj(
         model_id=None,
         no_collision=False,
 ) -> Actor:
+    owner = scene
+    _record_asset_tree(owner, Path("assets/objects") / modelname)
     scene, pose = preprocess(scene, pose)
 
     modeldir = Path("assets/objects") / modelname
@@ -446,6 +462,8 @@ def create_glb(
         is_static=False,
         model_id=None,
 ) -> Actor:
+    owner = scene
+    _record_asset_tree(owner, Path("assets/objects") / modelname)
     scene, pose = preprocess(scene, pose)
 
     modeldir = Path("./assets/objects") / modelname
@@ -507,6 +525,8 @@ def create_actor(
         is_static=False,
         model_id=0,
 ) -> Actor:
+    owner = scene
+    _record_asset_tree(owner, Path("assets/objects") / modelname)
     scene, pose = preprocess(scene, pose)
     modeldir = Path("assets/objects") / modelname
 
@@ -561,6 +581,8 @@ def create_actor(
 
 # create urdf model
 def create_urdf_obj(scene, pose: sapien.Pose, modelname: str, scale=1.0, fix_root_link=True) -> ArticulationActor:
+    owner = scene
+    _record_asset_tree(owner, Path("assets/objects") / modelname)
     scene, pose = preprocess(scene, pose)
 
     modeldir = Path("./assets/objects") / modelname
@@ -592,6 +614,7 @@ def create_sapien_urdf_obj(
     modelid: int = None,
     fix_root_link=False,
 ) -> ArticulationActor:
+    owner = scene
     scene, pose = preprocess(scene, pose)
 
     modeldir = Path("assets") / "objects" / modelname
@@ -615,6 +638,7 @@ def create_sapien_urdf_obj(
                 raise ValueError(f"modelid {modelid} is out of range for {modelname}.")
         else:
             modeldir = model_list[modelid]
+    _record_asset_tree(owner, modeldir)
     json_file = modeldir / "model_data.json"
 
     if json_file.exists():

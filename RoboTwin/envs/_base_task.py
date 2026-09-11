@@ -62,6 +62,7 @@ class Base_Task(gym.Env):
         # random.seed(kwags.get('seed', 0))
 
         self._physics_step_observers = []
+        self._collection_asset_files = set()
 
         self.FRAME_IDX = 0
         self.task_name = kwags.get("task_name")
@@ -1374,6 +1375,11 @@ class Base_Task(gym.Env):
             target_dis=grasp_dis,
             contact_point_id=contact_point_id,
         )
+        if pre_grasp_pose is None or grasp_pose is None:
+            raise UnStableError(
+                f"No valid grasp pose for actor={actor.get_name()}, arm={arm_tag}, "
+                f"contact_point_id={contact_point_id}"
+            )
         if pre_grasp_pose == grasp_pose:
             return arm_tag, [
                 Action(arm_tag, "move", target_pose=pre_grasp_pose),
