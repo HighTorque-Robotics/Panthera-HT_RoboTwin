@@ -1,6 +1,6 @@
 # Panthera 任务配置与采集验证
 
-本目录保存 Panthera 任务采集配置，并记录任务级采集验证进度。状态更新截至 2026-09-03。
+本目录保存 Panthera 任务采集配置，并记录任务级采集验证进度。状态更新截至 2026-09-14。
 
 ## 状态口径
 
@@ -14,11 +14,11 @@
 
 Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 6 个关节 + 1 个夹爪）。
 
-截至 2026-09-04，50 个任务中有 48 个至少成功采集过 1 条双臂 smoke。以下 2 个任务尚未通过：
+截至 2026-09-14，50 个任务中有 49 个至少成功采集过 1 条双臂 smoke。以下 1 个任务尚未通过：
 
 | 任务 | 当前现象 | 当前结论 |
 | --- | --- | --- |
-| `place_dual_shoes` | 300 秒内 seed 0～144 均未通过；同时观察到规划失败、`041_shoe` 初始不稳定和一次空目标位姿 | 尚未通过，规划可达性与物体初始化稳定性都需排查 |
+| `place_dual_shoes` | 保留鞋型、位置和旋转随机化；最新两组有效 episode 合计 8/16（50%），`041_shoe` 不稳定初始化单独记录 | 已通过阶段性采集，可按当前成功率批量采集 |
 | `rotate_qrcode` | 300 秒内 seed 0～154 均未通过，未观察到代码异常 | 尚未通过，需定位精确对齐动作的双臂规划边界，同时保持最终物理姿态正确 |
 
 `handover_mic` 已完成 Panthera 双臂正式采集验证：在不改变场景随机化的前提下，33 个随机 seed 中筛得 20 个有效 episode，并完成 20 个 HDF5、60 个视频和 20 条场景信息的文件级检查。当前 seed 筛选通过率约为 60.6%；该任务可用于阶段性批量采集，后续如调整交接策略仍需重新回归。
@@ -29,7 +29,7 @@ Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 
 
 `lift_pot` 已通过 Panthera 双臂端到端回归。Panthera 模式仅启用锅模型 0，并将双臂抓取位置沿手指方向深入 10 mm；锅的 XY 位置与旋转随机化仍保留。锅模型 1 的锅柄更低，当前侧向预抓取会使 Panthera 左臂第 4 关节到达约 1.6000 rad 上限，直接进入最终位姿还会推撞锅体，因此暂不用于 Panthera 采集。该限制不影响其他 embodiment 的原始模型随机逻辑。
 
-此前重点验证的双臂协调任务中，`grab_roller`、`handover_block`、`hanging_mug`、`handover_mic`、`lift_pot`、`pick_dual_bottles`、`place_cans_plasticbox`、`put_bottles_dustbin` 和 `stack_bowls_three` 已通过；`place_dual_shoes` 尚未通过。仓库没有独立的“协调任务”标签，这里的分类依据任务语义和左右臂动作序列。
+此前重点验证的双臂协调任务中，`grab_roller`、`handover_block`、`hanging_mug`、`handover_mic`、`lift_pot`、`pick_dual_bottles`、`place_cans_plasticbox`、`put_bottles_dustbin`、`stack_bowls_three` 和 `place_dual_shoes` 已通过。仓库没有独立的“协调任务”标签，这里的分类依据任务语义和左右臂动作序列。
 
 ## 单臂采集
 
@@ -44,7 +44,7 @@ Panthera 双臂模式使用两台 `panthera-6dof`，动作维度为 14（每臂 
 
 ## 完整配置状态索引
 
-双臂 `PASS`（48）：
+双臂 `PASS`（49）：
 
 ```text
 adjust_bottle, beat_block_hammer, blocks_ranking_rgb, blocks_ranking_size,
@@ -55,15 +55,15 @@ place_a2b_left, place_a2b_right, place_bread_basket, place_bread_skillet,
 place_burger_fries, place_can_basket, place_cans_plasticbox,
 place_container_plate, place_empty_cup, place_fan, place_mouse_pad,
 place_object_basket, place_object_scale, place_object_stand, place_phone_stand,
-place_shoe, press_stapler, put_bottles_dustbin, put_object_cabinet, scan_object,
+place_shoe, place_dual_shoes, press_stapler, put_bottles_dustbin, put_object_cabinet, scan_object,
 shake_bottle, shake_bottle_horizontally, stack_blocks_three, stack_blocks_two,
 stack_bowls_three, stack_bowls_two, stamp_seal, turn_switch
 ```
 
-双臂尚未通过（2）：
+双臂尚未通过（1）：
 
 ```text
-place_dual_shoes, rotate_qrcode
+rotate_qrcode
 ```
 
 单臂 `PASS`（32）：

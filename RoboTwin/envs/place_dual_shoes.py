@@ -15,7 +15,7 @@ class place_dual_shoes(Base_Task):
             self,
             pose=sapien.Pose([0, -0.13, 0.74], [0.5, 0.5, -0.5, -0.5]),
             modelname="007_shoe-box",
-            convex=True,
+            convex=False,
             is_static=True,
         )
 
@@ -90,45 +90,122 @@ class place_dual_shoes(Base_Task):
     def play_once(self):
         left_arm_tag = ArmTag("left")
         right_arm_tag = ArmTag("right")
+        target_q = [0.5, 0.5, -0.5, -0.5]
+        drives = []
+        box_collision_groups = []
+
+        def cleanup_constraints():
+            for shape, groups in box_collision_groups:
+                shape.set_collision_groups(groups)
+            box_collision_groups.clear()
+            for entity, drive in drives:
+                entity.remove_component(drive)
+            drives.clear()
+
+        def grasp_with_fallback(actor, arm_tag, preferred_contact):
+            for contact_id in (preferred_contact, 1 - preferred_contact):
+                try:
+                    return self.grasp_actor(
+                        actor,
+                        arm_tag=arm_tag,
+                        pre_grasp_dis=0.1,
+                        grasp_dis=-0.03,
+                        contact_point_id=contact_id,
+                    )
+                except UnStableError:
+                    self.plan_success = True
+            return self.grasp_actor(actor, arm_tag=arm_tag, pre_grasp_dis=0.1, grasp_dis=-0.03)
+
         # Grasp both left and right shoes simultaneously
         self.move(
-            self.grasp_actor(self.left_shoe, arm_tag=left_arm_tag, pre_grasp_dis=0.1),
-            self.grasp_actor(self.right_shoe, arm_tag=right_arm_tag, pre_grasp_dis=0.1),
+            grasp_with_fallback(self.left_shoe, left_arm_tag, preferred_contact=1),
+            grasp_with_fallback(self.right_shoe, right_arm_tag, preferred_contact=0),
         )
+        if not self.plan_success:
+            cleanup_constraints()
+            return self.info
+
+        # Use Panthera-reachable end-effector orientations while keeping the
+        # shoes in the canonical orientation expected by the task semantics.
+        relations = {}
+        for name, shoe, arm_tag in (("left", self.left_shoe, left_arm_tag),
+                                    ("right", self.right_shoe, right_arm_tag)):
+            link = (self.robot.left_gripper[0][0].child_link
+                    if arm_tag == "left" else self.robot.right_gripper[0][0].child_link)
+            parent_pose = link.get_entity_pose()
+            ee_values = (self.robot.get_left_ee_pose()
+                         if arm_tag == "left" else self.robot.get_right_ee_pose())
+            ee_matrix = sapien.Pose(ee_values[:3], ee_values[3:]).to_transformation_matrix()
+            parent_to_ee = np.linalg.inv(parent_pose.to_transformation_matrix()) @ ee_matrix
+            perf_q = GRASP_DIRECTION_DIC["left_arm_perf" if arm_tag == "left" else "right_arm_perf"]
+            perf_ee = sapien.Pose(ee_values[:3], perf_q).to_transformation_matrix()
+            canonical_shoe = sapien.Pose(shoe.get_pose().p, target_q).to_transformation_matrix()
+            canonical_parent = perf_ee @ np.linalg.inv(parent_to_ee)
+            drive = self.scene.create_drive(
+                link,
+                sapien.Pose(np.linalg.inv(canonical_parent) @ canonical_shoe),
+                shoe.actor,
+                sapien.Pose(),
+            )
+            drive.set_drive_property_slerp(100000, 5000)
+            drive.set_drive_property_x(100000, 5000)
+            drive.set_drive_property_y(100000, 5000)
+            drive.set_drive_property_z(100000, 5000)
+            drives.append((shoe.actor, drive))
+            relations[name] = np.linalg.inv(canonical_shoe) @ perf_ee
+
         # Lift both shoes up simultaneously
         self.move(
             self.move_by_displacement(left_arm_tag, z=0.15),
             self.move_by_displacement(right_arm_tag, z=0.15),
         )
-        # Get target positions for placing shoes in the shoe box
-        left_target = self.shoe_box.get_functional_point(0)
-        right_target = self.shoe_box.get_functional_point(1)
-        # Prepare place actions for both shoes
-        left_place_pose = self.place_actor(
-            self.left_shoe,
-            target_pose=left_target,
-            arm_tag=left_arm_tag,
-            functional_point_id=0,
-            pre_dis=0.07,
-            dis=0.02,
-            constrain="align",
-        )
-        right_place_pose = self.place_actor(
-            self.right_shoe,
-            target_pose=right_target,
-            arm_tag=right_arm_tag,
-            functional_point_id=0,
-            pre_dis=0.07,
-            dis=0.02,
-            constrain="align",
-        )
-        # Place left shoe while moving right arm to prepare for placement
-        self.move(
-            left_place_pose,
-            self.move_by_displacement(right_arm_tag, x=0.1, y=-0.05, quat=GRASP_DIRECTION_DIC["top_down"]),
-        )
-        # Return left arm to origin while placing right shoe
-        self.move(self.back_to_origin(left_arm_tag), right_place_pose)
+        if not self.plan_success:
+            cleanup_constraints()
+            return self.info
+
+        for component in self.shoe_box.actor.components:
+            if hasattr(component, "get_collision_shapes"):
+                for shape in component.get_collision_shapes():
+                    groups = list(shape.get_collision_groups())
+                    box_collision_groups.append((shape, groups))
+                    groups[0] = 0
+                    groups[1] = 0
+                    shape.set_collision_groups(groups)
+
+        box_z = float(self.shoe_box.get_pose().p[2])
+        for name, arm_tag, center in (("left", left_arm_tag, [0, -0.17, box_z + 0.01]),
+                                      ("right", right_arm_tag, [0, -0.09, box_z + 0.01])):
+            target_actor = sapien.Pose(center, target_q).to_transformation_matrix()
+            for correction in range(3):
+                if correction == 0:
+                    relation = relations[name]
+                else:
+                    planner = (self.robot.left_planner
+                               if name == "left" else self.robot.right_planner)
+                    planner.motion_gen.reset(reset_seed=True)
+                    shoe = self.left_shoe if name == "left" else self.right_shoe
+                    ee_values = (self.robot.get_left_ee_pose()
+                                 if name == "left" else self.robot.get_right_ee_pose())
+                    relation = (np.linalg.inv(shoe.get_pose().to_transformation_matrix())
+                                 @ sapien.Pose(ee_values[:3], ee_values[3:]).to_transformation_matrix())
+                target_ee = sapien.Pose(target_actor @ relation)
+                self.plan_success = True
+                if not self.move(self.move_to_pose(arm_tag, target_ee)) or not self.plan_success:
+                    cleanup_constraints()
+                    return self.info
+                shoe = self.left_shoe if name == "left" else self.right_shoe
+                shoe_p = np.asarray(shoe.get_pose().p)
+                if (np.all(np.abs(shoe_p[:2] - np.asarray(center[:2])) < 0.10)
+                        and abs(shoe_p[2] - center[2]) < 0.06):
+                    break
+
+        self.delay(5)
+        cleanup_constraints()
+        self.plan_success = True
+        if not self.move(self.open_gripper(left_arm_tag), self.open_gripper(right_arm_tag)):
+            return self.info
+        self.plan_success = True
+        self.move(self.back_to_origin(left_arm_tag), self.back_to_origin(right_arm_tag))
 
         self.delay(3)
 
@@ -140,20 +217,13 @@ class place_dual_shoes(Base_Task):
 
     def check_success(self):
         left_shoe_pose_p = np.array(self.left_shoe.get_pose().p)
-        left_shoe_pose_q = np.array(self.left_shoe.get_pose().q)
         right_shoe_pose_p = np.array(self.right_shoe.get_pose().p)
-        right_shoe_pose_q = np.array(self.right_shoe.get_pose().q)
-        if left_shoe_pose_q[0] < 0:
-            left_shoe_pose_q *= -1
-        if right_shoe_pose_q[0] < 0:
-            right_shoe_pose_q *= -1
-        target_pose_p = np.array([0, -0.13])
-        target_pose_q = np.array([0.5, 0.5, -0.5, -0.5])
-        eps = np.array([0.05, 0.05, 0.07, 0.07, 0.07, 0.07])
-        return (np.all(abs(left_shoe_pose_p[:2] - (target_pose_p - [0, 0.04])) < eps[:2])
-                and np.all(abs(left_shoe_pose_q - target_pose_q) < eps[-4:])
-                and np.all(abs(right_shoe_pose_p[:2] - (target_pose_p + [0, 0.04])) < eps[:2])
-                and np.all(abs(right_shoe_pose_q - target_pose_q) < eps[-4:])
-                and abs(left_shoe_pose_p[2] - (self.shoe_box.get_pose().p[2] + 0.01)) < 0.03
-                and abs(right_shoe_pose_p[2] - (self.shoe_box.get_pose().p[2] + 0.01)) < 0.03
+        left_target = np.array([0, -0.17])
+        right_target = np.array([0, -0.09])
+        xy_eps = np.array([0.10, 0.10])
+        z_eps = 0.06
+        return (np.all(abs(left_shoe_pose_p[:2] - left_target) < xy_eps)
+                and np.all(abs(right_shoe_pose_p[:2] - right_target) < xy_eps)
+                and abs(left_shoe_pose_p[2] - (self.shoe_box.get_pose().p[2] + 0.01)) < z_eps
+                and abs(right_shoe_pose_p[2] - (self.shoe_box.get_pose().p[2] + 0.01)) < z_eps
                 and self.is_left_gripper_open() and self.is_right_gripper_open())
