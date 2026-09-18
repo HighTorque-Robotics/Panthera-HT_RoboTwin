@@ -119,5 +119,5 @@ class stack_bowls_three(Base_Task):
         eps2 = 0.04
         return (np.all(abs(bowl1_pose[:2] - bowl2_pose[:2]) < eps2)
                 and np.all(abs(bowl2_pose[:2] - bowl3_pose[:2]) < eps2)
-                and np.all(np.array([bowl1_pose[2], bowl2_pose[2], bowl3_pose[2]]) - target_height < eps)
+                and np.all(np.abs(np.array([bowl1_pose[2], bowl2_pose[2], bowl3_pose[2]]) - target_height) < eps)
                 and self.is_left_gripper_open() and self.is_right_gripper_open())

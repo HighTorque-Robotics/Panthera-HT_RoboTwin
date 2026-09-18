@@ -406,11 +406,6 @@ class Base_Task(gym.Env):
         else:
             self.robot.reset(self.scene, self.need_topp, **kwags)
 
-        for entity in self.robot.iter_unique_entities():
-            for link in entity.get_links():
-                link: sapien.physx.PhysxArticulationLinkComponent = link
-                link.set_mass(1)
-
     def load_camera(self, **kwags):
         """
         Add cameras and set camera parameters
