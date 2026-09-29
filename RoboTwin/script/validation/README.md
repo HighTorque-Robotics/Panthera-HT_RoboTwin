@@ -20,8 +20,13 @@ python script/eval_policy.py \
   --physics_validation True
 ```
 
-The current task rule records both raw evidence and provisional pass/fail
-criteria:
+The registered rules currently support `blocks_ranking_rgb`,
+`move_pillbottle_pad`, and `stack_bowls_three`. The `stack_bowls_three` rule is
+diagnostic-only: it records raw evidence and does not claim that the physical
+rollout passed.
+
+The task-specific rules may record raw evidence and, where explicitly defined,
+provisional pass/fail criteria:
 
 - bilateral finger contact and contact duration;
 - object lift and table contact while lifted;

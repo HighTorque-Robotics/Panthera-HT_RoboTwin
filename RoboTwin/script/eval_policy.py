@@ -196,10 +196,13 @@ def main(usr_args):
         file.write(f"Instruction Type: {instruction_type}\n\n")
         file.write("\n".join(map(str, np.array(suc_nums) / test_num)))
         if args.get("physics_validation", False):
-            file.write(
-                f"\n\nPhysical validation: "
-                f"{getattr(TASK_ENV, 'physical_validation_suc', 0)}/{test_num}\n"
-            )
+            if getattr(TASK_ENV, "physics_validation_diagnostic_only", False):
+                file.write("\n\nPhysical validation: diagnostic-only reports\n")
+            else:
+                file.write(
+                    f"\n\nPhysical validation (non-diagnostic rules): "
+                    f"{getattr(TASK_ENV, 'physical_validation_suc', 0)}/{test_num}\n"
+                )
 
     print(f"Data has been saved to {file_path}")
     # return task_reward
@@ -232,6 +235,7 @@ def eval_policy(task_name,
     task_total_reward = 0
     clear_cache_freq = args["clear_cache_freq"]
     TASK_ENV.physical_validation_suc = 0
+    TASK_ENV.physics_validation_diagnostic_only = False
 
     args["eval_mode"] = True
 
@@ -347,13 +351,17 @@ def eval_policy(task_name,
                     import json
 
                     json.dump(physics_report, file, ensure_ascii=False, indent=2)
-                if physics_report["physical_validation_passed"]:
-                    TASK_ENV.physical_validation_suc += 1
-                print(
-                    "Physical validation: "
-                    f"{'PASS' if physics_report['physical_validation_passed'] else 'FAIL'} "
-                    f"-> {report_path}"
-                )
+                if physics_report.get("diagnostic_only", False):
+                    TASK_ENV.physics_validation_diagnostic_only = True
+                    print(f"Physical diagnostics collected -> {report_path}")
+                else:
+                    if physics_report["physical_validation_passed"]:
+                        TASK_ENV.physical_validation_suc += 1
+                    print(
+                        "Physical validation: "
+                        f"{'PASS' if physics_report['physical_validation_passed'] else 'FAIL'} "
+                        f"-> {report_path}"
+                    )
         # task_total_reward += TASK_ENV.episode_score
         if TASK_ENV.eval_video_path is not None:
             TASK_ENV._del_eval_video_ffmpeg()

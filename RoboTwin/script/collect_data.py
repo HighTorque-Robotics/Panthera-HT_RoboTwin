@@ -399,9 +399,12 @@ def finish_physics_validation(task_env, monitor, *, episode, seed, phase):
     })
     if getattr(task_env, "single_arm_mode", False):
         report["single_arm_setup"] = task_env.single_arm_setup
-    report["collection_validation_passed"] = bool(
-        report["physical_validation_passed"] and task_env.plan_success
-    )
+    if report.get("diagnostic_only", False):
+        report["collection_validation_passed"] = bool(task_env.plan_success)
+    else:
+        report["collection_validation_passed"] = bool(
+            report["physical_validation_passed"] and task_env.plan_success
+        )
     return report
 
 

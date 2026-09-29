@@ -1753,7 +1753,7 @@ class Base_Task(gym.Env):
             if right_n_step == 0:
                 topp_right_flag = False
                 right_n_step = 50  # fixed
-        
+
         elif action_type == 'ee':
 
             left_result = self.robot.left_plan_path(left_arm_actions[0])

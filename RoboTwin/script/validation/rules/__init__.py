@@ -2,11 +2,13 @@
 
 from .move_pillbottle_pad import MovePillbottlePadRule
 from .blocks_ranking_rgb import BlocksRankingRGBRule
+from .stack_bowls_three import StackBowlsThreeRule
 
 
 RULES = {
     "blocks_ranking_rgb": BlocksRankingRGBRule,
     "move_pillbottle_pad": MovePillbottlePadRule,
+    "stack_bowls_three": StackBowlsThreeRule,
 }
 
 

@@ -4,6 +4,11 @@ import sapien
 import math
 
 
+# Keep the bowl's functional point just above the tabletop to avoid initial
+# interpenetration while retaining the table's randomized height.
+BOWL_TABLE_CLEARANCE_M = 0.001
+
+
 class stack_bowls_three(Base_Task):
 
     def setup_demo(self, **kwags):
@@ -45,13 +50,16 @@ class stack_bowls_three(Base_Task):
         self.bowl1 = create_bowl(bowl_pose_lst[0])
         self.bowl2 = create_bowl(bowl_pose_lst[1])
         self.bowl3 = create_bowl(bowl_pose_lst[2])
-
+        self.bowl_actors = (self.bowl1, self.bowl2, self.bowl3)
         self.add_prohibit_area(self.bowl1, padding=0.07)
         self.add_prohibit_area(self.bowl2, padding=0.07)
         self.add_prohibit_area(self.bowl3, padding=0.07)
         target_pose = [-0.1, -0.15, 0.1, -0.05]
         self.prohibited_area.append(target_pose)
-        self.bowl1_target_pose = np.array([0, -0.1, 0.76])
+        tabletop_z = float(self.table.get_pose().p[2])
+        self.bowl1_target_pose = np.array(
+            [0, -0.1, tabletop_z + BOWL_TABLE_CLEARANCE_M]
+        )
         self.quat_of_target_pose =  [0, 0.707, 0.707, 0]
 
     def move_bowl(self, actor, target_pose):
