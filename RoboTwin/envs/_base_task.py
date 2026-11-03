@@ -1659,6 +1659,85 @@ class Base_Task(gym.Env):
 
         return True  # TODO: maybe need try error
 
+    def _take_single_action(self, action, action_type: Literal['qpos', 'ee'] = 'qpos'):
+        """Execute one 7D ACT action for the single physical Panthera arm."""
+        actions = np.asarray(action, dtype=np.float64).reshape(1, -1)
+        left_jointstate = self.robot.get_left_arm_jointState()
+        left_arm_dim = len(left_jointstate) - 1 if action_type == 'qpos' else 7
+        if actions.shape[1] != left_arm_dim + 1:
+            raise ValueError(
+                f"Single-arm action must have {left_arm_dim + 1} values, "
+                f"got {actions.shape[1]}"
+            )
+
+        left_arm_actions = actions[:, :left_arm_dim]
+        left_gripper_actions = actions[:, left_arm_dim]
+        left_current_qpos = np.asarray(left_jointstate[:left_arm_dim], dtype=np.float64)
+
+        if action_type == 'qpos':
+            left_path = np.vstack((left_current_qpos, left_arm_actions))
+            try:
+                _, left_pos, left_vel, _, _ = self.robot.left_mplib_planner.TOPP(
+                    left_path, 1 / 250, verbose=True
+                )
+                left_result = {"position": left_pos, "velocity": left_vel}
+                left_n_step = left_pos.shape[0]
+                topp_left_flag = left_n_step > 0
+            except Exception:
+                left_result = {"position": [], "velocity": []}
+                left_n_step = 50
+                topp_left_flag = False
+        elif action_type == 'ee':
+            left_result = self.robot.left_plan_path(left_arm_actions[0])
+            topp_left_flag = left_result["status"] == "Success"
+            left_n_step = (
+                left_result["position"].shape[0] if topp_left_flag else 50
+            )
+        else:
+            raise ValueError(f"Unsupported action_type: {action_type}")
+
+        left_current_gripper = self.robot.get_left_gripper_val()
+        left_gripper_path = np.hstack((left_current_gripper, left_gripper_actions))
+        left_mod_num = left_n_step % len(left_gripper_actions)
+        left_gripper_step = [0] + [
+            left_n_step // len(left_gripper_actions)
+            + (1 if i < left_mod_num else 0)
+            for i in range(len(left_gripper_actions))
+        ]
+        left_gripper = []
+        for gripper_step in range(1, left_gripper_path.shape[0]):
+            region = np.linspace(
+                left_gripper_path[gripper_step - 1],
+                left_gripper_path[gripper_step],
+                left_gripper_step[gripper_step] + 1,
+            )[1:]
+            left_gripper.extend(region.tolist())
+        left_gripper = np.asarray(left_gripper)
+
+        for control_idx in range(left_n_step):
+            if topp_left_flag:
+                self.robot.set_arm_joints(
+                    left_result["position"][control_idx],
+                    left_result["velocity"][control_idx],
+                    "left",
+                )
+            self.robot.set_gripper(left_gripper[control_idx], "left")
+            self._step_scene()
+            self._update_render()
+            if self.check_success():
+                self.eval_success = True
+                self.get_obs()
+                if self.eval_video_path is not None:
+                    self.eval_video_ffmpeg.stdin.write(
+                        self.now_obs["observation"]["head_camera"]["rgb"].tobytes()
+                    )
+                return
+
+        self._update_render()
+        if self.render_freq:
+            self.viewer.render()
+
+
     def take_action(self, action, action_type:Literal['qpos', 'ee']='qpos'):  # action_type: qpos or ee
         if self.take_action_cnt == self.step_lim or self.eval_success:
             return
@@ -1673,6 +1752,10 @@ class Base_Task(gym.Env):
         self._update_render()
         if self.render_freq:
             self.viewer.render()
+
+        if self.single_arm_mode:
+            self._take_single_action(action, action_type=action_type)
+            return
 
         actions = np.array([action])
         left_jointstate = self.robot.get_left_arm_jointState()

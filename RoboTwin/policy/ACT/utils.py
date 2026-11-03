@@ -133,7 +133,7 @@ def get_norm_stats(dataset_dir, num_episodes):
     return stats, max_action_len
 
 
-def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val, is_sim=False):
+def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val, is_sim=False, num_workers=1):
     print(f"\nData from: {dataset_dir}\n")
     # obtain train test split
     train_ratio = 0.8
@@ -151,21 +151,22 @@ def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_s
     val_dataset = EpisodicDataset(
         val_indices, dataset_dir, camera_names, norm_stats, max_action_len, is_sim=is_sim
     )
+    prefetch_factor = 2 if num_workers > 0 else None
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size_train,
         shuffle=True,
         pin_memory=True,
-        num_workers=1,
-        prefetch_factor=1,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
     )
     val_dataloader = DataLoader(
         val_dataset,
         batch_size=batch_size_val,
         shuffle=True,
         pin_memory=True,
-        num_workers=1,
-        prefetch_factor=1,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor,
     )
 
     return train_dataloader, val_dataloader, norm_stats, train_dataset.is_sim

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -220,9 +221,16 @@ class ActTrainAdapter:
         self.python = Path(request.python).expanduser().resolve() if request.python else _default_act_python()
         self.policy_root = REPO_ROOT / "policy" / "ACT"
         self.batch_size = request.batch_size if request.batch_size is not None else 1
+        self.learning_rate = float(request.lr) if getattr(request, "lr", None) is not None else self.__class__.learning_rate
+        self.save_freq = int(request.save_freq) if getattr(request, "save_freq", None) is not None else self.__class__.save_freq
+        self.num_workers = int(getattr(request, "num_workers", 0) or 0)
+        pretrain_ckpt = getattr(request, "pretrain_ckpt", None)
+        self.pretrain_ckpt = Path(pretrain_ckpt).expanduser().resolve() if pretrain_ckpt else None
         self.num_episodes = 0
         self.episode_len = 0
         self.task_name = ""
+        self.camera_names = self.__class__.camera_names
+        self.state_dim = self.__class__.state_dim
 
     def validate(self) -> None:
         if self.request.stage is not None:
@@ -243,8 +251,14 @@ class ActTrainAdapter:
             raise TrainingError("ACT 第一版不支持 --overwrite；请使用新的输出目录")
         if self.request.wandb:
             raise TrainingError("ACT 原训练脚本不支持 Weights & Biases")
-        if self.request.num_workers != 0:
-            raise TrainingError("ACT 当前由原 DataLoader 管理 worker，不支持 --num-workers")
+        if self.request.num_workers < 0:
+            raise TrainingError("--num-workers 不能为负数")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise TrainingError("--lr 必须为有限正数")
+        if self.save_freq <= 0:
+            raise TrainingError("--save-freq 必须为正整数")
+        if self.pretrain_ckpt is not None and not self.pretrain_ckpt.is_file():
+            raise TrainingError(f"ACT 热启动 checkpoint 不存在或不是文件: {self.pretrain_ckpt}")
         if not self.dataset.is_dir():
             raise TrainingError(f"数据集目录不存在: {self.dataset}")
         if not self.python.is_file():
@@ -267,12 +281,23 @@ class ActTrainAdapter:
 
         if manifest.get("policy") != "act":
             raise TrainingError(f"转换清单不是 ACT 数据集: {manifest_path}")
-        if manifest.get("action_dim") != 14:
-            raise TrainingError(f"ACT 双臂数据 action_dim 必须为 14: {manifest_path}")
-        if tuple(manifest.get("camera_names", ())) != self.camera_names:
+        action_dim = manifest.get("action_dim")
+        if action_dim not in (7, 14):
             raise TrainingError(
-                "ACT 相机顺序必须为 " + ", ".join(self.camera_names)
+                f"ACT 数据 action_dim 必须为 7 或 14，实际为 {action_dim}: {manifest_path}"
             )
+        expected_camera_names = (
+            ("cam_high", "cam_wrist")
+            if action_dim == 7
+            else ("cam_high", "cam_right_wrist", "cam_left_wrist")
+        )
+        camera_names = tuple(manifest.get("camera_names", ()))
+        if camera_names != expected_camera_names:
+            raise TrainingError(
+                "ACT 相机顺序必须为 " + ", ".join(expected_camera_names)
+            )
+        self.state_dim = action_dim
+        self.camera_names = camera_names
 
         episodes = manifest.get("episodes")
         if not isinstance(episodes, list) or not episodes:
@@ -388,7 +413,10 @@ class ActTrainAdapter:
             str(self.state_dim),
             "--seed",
             str(self.request.seed),
-        ]
+            "--num_workers",
+            str(self.num_workers),
+        ] + (["--pretrain_ckpt", str(self.pretrain_ckpt)]
+             if self.pretrain_ckpt is not None else [])
 
     def _environment(self) -> dict[str, str]:
         environment = os.environ.copy()
@@ -447,9 +475,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--exp-name")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--lr", type=float, default=None, help="ACT 学习率（默认沿用内置 1e-5）")
+    parser.add_argument("--save-freq", type=int, default=None, help="ACT ckpt 保存间隔（epoch）")
     parser.add_argument("--steps", type=int, help="训练步数，仅 Pi0.5 train 阶段使用")
     parser.add_argument("--epochs", type=int, help="训练轮数，仅 ACT 使用")
     parser.add_argument("--seed", type=int, default=0, help="随机种子，仅 ACT 使用")
+    parser.add_argument(
+        "--pretrain-ckpt",
+        type=Path,
+        help="ACT 热启动：从该 ckpt 初始化权重（严格加载，架构/state_dim 不一致会直接报错），"
+             "optimizer 和 normalizer 仍然重新开始",
+    )
     parser.add_argument("--max-frames", type=int, help="统计阶段最多使用的帧数")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--resume", action="store_true")

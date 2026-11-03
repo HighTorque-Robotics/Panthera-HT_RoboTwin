@@ -11,39 +11,45 @@ from .act_policy import ACT
 import copy
 from argparse import Namespace
 
-def encode_obs(observation):
+def encode_obs(observation, camera_names):
     # The collection path JPEG-encodes the runtime RGB array with OpenCV and
     # decodes it again during ACT conversion. That round trip preserves the
     # numeric channel order in the stored tensor, so do not swap channels here.
     head_cam = observation["observation"]["head_camera"]["rgb"]
+    head_cam = cv2.resize(head_cam, (640, 480), interpolation=cv2.INTER_LINEAR)
+    head_cam = np.moveaxis(head_cam, -1, 0) / 255.0
+    joint_action = observation["joint_action"]
+    if tuple(camera_names) == ("cam_high", "cam_wrist"):
+        wrist_cam = observation["observation"]["wrist_camera"]["rgb"]
+        wrist_cam = cv2.resize(wrist_cam, (640, 480), interpolation=cv2.INTER_LINEAR)
+        wrist_cam = np.moveaxis(wrist_cam, -1, 0) / 255.0
+        qpos = np.asarray(
+            joint_action["arm"] + [joint_action["gripper"]],
+            dtype=np.float32,
+        )
+        return {"cam_high": head_cam, "cam_wrist": wrist_cam, "qpos": qpos}
+
     left_cam = observation["observation"]["left_camera"]["rgb"]
     right_cam = observation["observation"]["right_camera"]["rgb"]
-    head_cam = cv2.resize(head_cam, (640, 480), interpolation=cv2.INTER_LINEAR)
     left_cam = cv2.resize(left_cam, (640, 480), interpolation=cv2.INTER_LINEAR)
     right_cam = cv2.resize(right_cam, (640, 480), interpolation=cv2.INTER_LINEAR)
-    head_cam = np.moveaxis(head_cam, -1, 0) / 255.0
     left_cam = np.moveaxis(left_cam, -1, 0) / 255.0
     right_cam = np.moveaxis(right_cam, -1, 0) / 255.0
     qpos = np.asarray(
-        observation["joint_action"]["left_arm"]
-        + [observation["joint_action"]["left_gripper"]]
-        + observation["joint_action"]["right_arm"]
-        + [observation["joint_action"]["right_gripper"]],
+        joint_action["left_arm"]
+        + [joint_action["left_gripper"]]
+        + joint_action["right_arm"]
+        + [joint_action["right_gripper"]],
         dtype=np.float32,
     )
-    return {
-        "cam_high": head_cam,
-        "cam_left_wrist": left_cam,
-        "cam_right_wrist": right_cam,
-        "qpos": qpos,
-    }
+    return {"cam_high": head_cam, "cam_left_wrist": left_cam, "cam_right_wrist": right_cam, "qpos": qpos}
 
 def get_model(usr_args):
     return ACT(usr_args, Namespace(**usr_args))
 
 
 def eval(TASK_ENV, model, observation):
-    obs = encode_obs(observation)
+    obs = encode_obs(observation, model.camera_names)
     # instruction = TASK_ENV.get_instruction()
 
     # Get action from model

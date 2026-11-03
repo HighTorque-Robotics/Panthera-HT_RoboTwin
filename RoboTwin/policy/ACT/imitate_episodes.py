@@ -101,7 +101,8 @@ def main(args):
         "temporal_agg": args["temporal_agg"],
         "camera_names": camera_names,
         "real_robot": not is_sim,
-        "save_freq": args['save_freq']
+        "save_freq": args['save_freq'],
+        "pretrain_ckpt": args.get("pretrain_ckpt", ""),
     }
 
     if is_eval:
@@ -117,7 +118,8 @@ def main(args):
         exit()
 
     train_dataloader, val_dataloader, stats, _ = load_data(dataset_dir, num_episodes, camera_names, batch_size_train,
-                                                           batch_size_val, is_sim=is_sim)
+                                                           batch_size_val, is_sim=is_sim,
+                                                           num_workers=int(args.get("num_workers", 1)))
 
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
@@ -361,6 +363,17 @@ def train_bc(train_dataloader, val_dataloader, config):
     set_seed(seed)
 
     policy = make_policy(policy_class, policy_config)
+    # Warm start.  Strict load on purpose: the only reason this can fail is an
+    # architecture/config drift (state_dim, chunk_size, hidden_dim, ...), and a
+    # silently half-loaded model would just train badly for hours.  It is loaded
+    # BEFORE the optimizer is built so the optimizer sees the real parameters.
+    pretrain_ckpt = config.get("pretrain_ckpt") or ""
+    if pretrain_ckpt:
+        state = torch.load(pretrain_ckpt, map_location="cpu")
+        if isinstance(state, dict) and "model" in state and "encoder.0.0.weight" not in state:
+            state = state["model"]
+        policy.load_state_dict(state, strict=True)  # noqa: F821 (loaded below)
+        print(f"[pretrain] warm start from {pretrain_ckpt}")
     policy.cuda()
     optimizer = make_optimizer(policy_class, policy)
 
@@ -484,5 +497,15 @@ if __name__ == "__main__":
         required=False,
     )
     parser.add_argument("--temporal_agg", action="store_true")
+    parser.add_argument("--num_workers", action="store", type=int, help="dataloader workers", required=False, default=1)
+    parser.add_argument(
+        "--pretrain_ckpt",
+        action="store",
+        type=str,
+        required=False,
+        default="",
+        help="start from this checkpoint instead of random init (warm start); "
+             "a bare state_dict, strict-loaded so a shape mismatch fails loudly",
+    )
 
     main(vars(parser.parse_args()))

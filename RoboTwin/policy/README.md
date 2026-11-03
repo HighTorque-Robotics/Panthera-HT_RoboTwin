@@ -45,7 +45,7 @@ act  pi0  pi05  go1  rdt  tinyvla  dexvla  dp  dp3
 
 - RoboTwin 采集层支持单臂原生 7 维和双臂原生 14 维；
 - 当前公共 Policy adapters 主要为双臂 14 维数据实现并完成 smoke，通常还假设存在 `head_camera`、`left_camera` 和 `right_camera`；
-- ACT、Pi0/Pi0.5、GO1 等路径包含明确的双臂关节名、14 维 shape 或左右腕相机契约；未经单独适配和测试，不应把单臂 7 维数据直接传入；
+- ACT 转换、训练和评测支持单臂 7 维及双臂 14 维，具体相机契约见第 3 节；其他 Policy 的单臂支持应分别确认，不能由采集层的支持直接推断；
 - instruction 从每条 episode 的 `instructions/episodeN.json` 读取；
 - Pi0/Pi0.5 等 LeRobot 输出必须保留 Panthera 的 motor names、robot type 和实际 FPS；
 - DP3 要求原始 HDF5 的 `/pointcloud` 非空。
@@ -86,7 +86,10 @@ python policy/data_convert.py \
 - `dataset_dir` 指向实际转换目录；
 - `num_episodes` 等于转换后的 episode 数量；
 - `episode_len` 等于最大 `output_num_frames`；
-- 相机顺序为 `cam_high`、`cam_right_wrist`、`cam_left_wrist`。
+- 双臂 14 维相机顺序为 `cam_high`、`cam_right_wrist`、`cam_left_wrist`；
+- 单臂 7 维相机顺序为 `cam_high`、`cam_wrist`。
+
+单臂采集目录需要包含 `joint_action/arm`、`joint_action/gripper` 和 `wrist_camera`。转换后也需将实际输出路径、回合数、最大帧数和对应相机列表注册到 `policy/ACT/SIM_TASK_CONFIGS.json`；本地实验注册项不应直接作为仓库默认配置提交。
 
 查看实际转换元数据：
 
@@ -119,6 +122,17 @@ train_run.json
 
 当前统一入口不支持续训或覆盖已有输出目录；请使用新的 `--output` 路径。
 
+ACT 可选训练参数：
+
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| `--lr` | `1e-5` | 有限且大于 0 的学习率 |
+| `--save-freq` | `2000` | 每多少个 epoch 保存一次 checkpoint，必须为正整数 |
+| `--num-workers` | `0` | DataLoader worker 数，可设为 0，不能为负数 |
+| `--pretrain-ckpt` | 不启用 | 从已有 ACT 权重初始化，文件必须存在 |
+
+`--pretrain-ckpt` 接受裸 `state_dict` 或以 `model` 字段包装的权重，并严格检查参数匹配；动作维度、相机数量、chunk 大小和模型结构应与原权重一致。它只初始化模型权重，不恢复优化器或训练进度，归一化统计仍从本次数据集重新计算，因此不同于 `--resume`。
+
 ### 3.3 闭环评测
 
 ACT 闭环评测需要仿真和 ACT 推理依赖：
@@ -136,6 +150,8 @@ python policy/eval.py \
 ```
 
 结果写入 `eval_result/<task>/<policy>/<task_config>/<checkpoint>/<timestamp>/`。正式结果不要和 `--fast-preview` 的低渲染质量混合比较。
+
+统一评测入口会从 checkpoint 目录中的 `train_run.json` 读取动作维度和相机列表，供单臂或双臂 ACT 使用；缺少清单时沿用原部署配置，默认是双臂 14 维。单臂评测应使用单臂任务配置，并保留训练入口生成的清单和 `dataset_stats.pkl`。
 
 ## 4. Pi0 和 Pi0.5
 

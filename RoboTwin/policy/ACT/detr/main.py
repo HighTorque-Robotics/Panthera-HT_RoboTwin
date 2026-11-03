@@ -113,8 +113,13 @@ def get_args_parser():
     parser.add_argument("--kl_weight", action="store", type=int, help="KL Weight", required=False)
     parser.add_argument("--chunk_size", action="store", type=int, help="chunk_size", required=False)
     parser.add_argument("--temporal_agg", action="store_true")
+    # warm start; declared here only so build_ACT_model_and_optimizer's re-parse
+    # of sys.argv does not choke on it -- the actual loading happens in
+    # imitate_episodes.train_bc, before the optimizer is constructed.
+    parser.add_argument("--pretrain_ckpt", action="store", type=str, required=False, default="")
     parser.add_argument("--state_dim", action="store", type=int, help="state dim", required=True)
     parser.add_argument("--save_freq", action="store", type=int, help="save ckpt frequency", required=False, default=6000)
+    parser.add_argument("--num_workers", action="store", type=int, help="dataloader workers", required=False, default=1)
     # parser.add_argument('--num_queries',type=int, required=True)
     # parser.add_argument('--actionsByQuery',type=int, required=True)
 

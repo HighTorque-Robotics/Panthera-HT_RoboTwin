@@ -7,6 +7,7 @@ adapter while keeping the simulator rollout loop in ``script/eval_policy.py``.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shlex
@@ -43,6 +44,7 @@ class ActEvalAdapter:
         self.deploy_config = REPO_ROOT / "policy" / "ACT" / "deploy_policy.yml"
         self.task_module = REPO_ROOT / "envs" / f"{request.task}.py"
         self.task_config = REPO_ROOT / "task_config" / f"{request.task_config}.yml"
+        self.train_manifest = self.checkpoint_dir / "train_run.json"
 
     def validate(self) -> None:
         if self.request.episodes <= 0:
@@ -69,6 +71,18 @@ class ActEvalAdapter:
             raise EvaluationError(f"RoboTwin 评测脚本不存在: {self.eval_script}")
         if not self.deploy_config.is_file():
             raise EvaluationError(f"ACT 部署配置不存在: {self.deploy_config}")
+
+    def _model_overrides(self) -> dict[str, object]:
+        if not self.train_manifest.is_file():
+            return {}
+        try:
+            manifest = json.loads(self.train_manifest.read_text(encoding="utf-8"))
+            model = manifest.get("model", {})
+            state_dim = int(model["state_dim"])
+            camera_names = list(manifest["camera_names"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise EvaluationError(f"ACT 训练清单无效: {self.train_manifest}: {exc}") from exc
+        return {"action_dim": state_dim, "camera_names": camera_names}
 
     def command(self) -> list[str]:
         command = [
@@ -98,6 +112,8 @@ class ActEvalAdapter:
             "--temporal_agg",
             str(self.request.temporal_agg),
         ]
+        for key, value in self._model_overrides().items():
+            command.extend([f"--{key}", repr(value)])
         if self.request.fast_preview:
             command.extend(
                 [
