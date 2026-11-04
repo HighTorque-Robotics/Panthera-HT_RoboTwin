@@ -1164,6 +1164,16 @@ class Base_Task(gym.Env):
             print(dir(contact))
             print(contact.bodies[0].entity.name, contact.bodies[1].entity.name)
 
+    @staticmethod
+    def _trajectory_cost(trajectory):
+        """Return the joint-space path length of a successful trajectory."""
+        positions = np.asarray(trajectory.get("position", []), dtype=np.float64)
+        if positions.ndim != 2 or positions.shape[0] == 0:
+            return float("inf")
+        if positions.shape[0] == 1:
+            return 0.0
+        return float(np.linalg.norm(np.diff(positions, axis=0), axis=1).sum())
+
     def choose_best_pose(self, res_pose, center_pose, arm_tag: ArmTag = None):
         """
         Choose the best pose from the list of target poses.
@@ -1171,7 +1181,10 @@ class Base_Task(gym.Env):
         """
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
-        arm_tag = self._resolve_arm_tag(arm_tag)
+        # Keep the logical arm tag during planning.  In single-arm mode the
+        # execution channel is always left, but left/right still represent
+        # different grasp-direction and frame hypotheses.
+        arm_tag = ArmTag(arm_tag)
         if arm_tag == "left":
             plan_multi_pose = self.robot.left_plan_multi_path
         elif arm_tag == "right":
@@ -1180,12 +1193,26 @@ class Base_Task(gym.Env):
         pose_num = len(target_lst)
         traj_lst = plan_multi_pose(target_lst)
         now_pose = None
+        now_cost = float("inf")
         now_step = -1
         for i in range(pose_num):
             if traj_lst["status"][i] != "Success":
                 continue
-            if now_pose is None or len(traj_lst["position"][i]) < now_step:
+            candidate_step = len(traj_lst["position"][i])
+            # Keep legacy frame-count ranking for dual-arm tasks.
+            candidate_cost = (
+                self._trajectory_cost({"position": traj_lst["position"][i]})
+                if self.single_arm_mode
+                else candidate_step
+            )
+            if (
+                now_pose is None
+                or candidate_cost < now_cost
+                or (np.isclose(candidate_cost, now_cost) and candidate_step < now_step)
+            ):
                 now_pose = target_lst[i]
+                now_cost = candidate_cost
+                now_step = candidate_step
         return now_pose
 
     # test grasp pose of all contact points
@@ -1209,7 +1236,8 @@ class Base_Task(gym.Env):
         """
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
-        arm_tag = self._resolve_arm_tag(arm_tag)
+        # Keep the logical grasp direction for candidate generation.
+        arm_tag = ArmTag(arm_tag)
 
         contact_matrix = actor.get_contact_point(contact_point_id, "matrix")
         if contact_matrix is None:
@@ -1243,14 +1271,14 @@ class Base_Task(gym.Env):
 
         return self.get_grasp_pose(actor, arm_tag, pre_dis=pre_dis)
 
-    def choose_grasp_pose(
+    def _choose_grasp_pose_for_arm(
         self,
         actor: Actor,
         arm_tag: ArmTag,
         pre_dis=0.1,
         target_dis=0,
         contact_point_id: list | float = None,
-    ) -> list:
+    ) -> tuple[list, list]:
         """
         Test the grasp pose function.
         - actor: The actor to be grasped.
@@ -1258,8 +1286,10 @@ class Base_Task(gym.Env):
         - pre_dis: The distance in front of the grasp point, default is 0.1.
         """
         if not self.plan_success:
-            return
-        arm_tag = self._resolve_arm_tag(arm_tag)
+            return None, None
+        # Preserve the logical direction while planning.  Physical execution
+        # is resolved separately when actions are created.
+        arm_tag = ArmTag(arm_tag)
         res_pre_top_down_pose = None
         res_top_down_pose = None
         dis_top_down = 1e9
@@ -1279,17 +1309,6 @@ class Base_Task(gym.Env):
             grasp_pose[:3] += [pre_grasp_dis, 0, 0] @ np.linalg.inv(direction_mat)
             grasp_pose = grasp_pose.tolist()
             return grasp_pose
-
-        def check_pose(pre_pose, pose, arm_tag):
-            if arm_tag == "left":
-                plan_func = self.robot.left_plan_path
-            else:
-                plan_func = self.robot.right_plan_path
-            pre_path = plan_func(pre_pose)
-            if pre_path["status"] != "Success":
-                return False
-            pre_qpos = pre_path["position"][-1]
-            return plan_func(pose)["status"] == "Success"
 
         if contact_point_id is not None:
             if type(contact_point_id) != list:
@@ -1331,6 +1350,75 @@ class Base_Task(gym.Env):
             return res_pre_side_pose, res_side_pose
         return res_pre_pose, res_pose
 
+    def _grasp_pose_cost(self, grasp_poses, arm_tag: ArmTag) -> float:
+        """Estimate sequential pre-grasp and grasp cost in joint space."""
+        pre_pose, grasp_pose = grasp_poses
+        if pre_pose is None or grasp_pose is None:
+            return float("inf")
+        arm_tag = ArmTag(arm_tag)
+        plan_func = (
+            self.robot.left_plan_path
+            if arm_tag == "left"
+            else self.robot.right_plan_path
+        )
+        try:
+            pre_path = plan_func(pre_pose)
+            if pre_path.get("status") != "Success":
+                return float("inf")
+            grasp_path = plan_func(
+                grasp_pose,
+                constraint_pose=[1, 1, 1, 0, 0, 0],
+                last_qpos=pre_path["position"][-1],
+            )
+            if grasp_path.get("status") != "Success":
+                return float("inf")
+            return self._trajectory_cost(pre_path) + self._trajectory_cost(grasp_path)
+        except Exception:
+            return float("inf")
+
+    def choose_grasp_pose(
+        self,
+        actor: Actor,
+        arm_tag: ArmTag,
+        pre_dis=0.1,
+        target_dis=0,
+        contact_point_id: list | float = None,
+    ) -> tuple[list, list]:
+        """Choose the best grasp while separating logical direction from execution."""
+        if not self.plan_success:
+            return None, None
+
+        if not self.single_arm_mode:
+            return self._choose_grasp_pose_for_arm(
+                actor,
+                ArmTag(arm_tag),
+                pre_dis=pre_dis,
+                target_dis=target_dis,
+                contact_point_id=contact_point_id,
+            )
+
+        candidate_arms = (ArmTag("left"), ArmTag("right"))
+        candidates = []
+        for candidate_arm in candidate_arms:
+            grasp_poses = self._choose_grasp_pose_for_arm(
+                actor,
+                candidate_arm,
+                pre_dis=pre_dis,
+                target_dis=target_dis,
+                contact_point_id=contact_point_id,
+            )
+            if grasp_poses[0] is None or grasp_poses[1] is None:
+                continue
+            cost = self._grasp_pose_cost(grasp_poses, candidate_arm)
+            if np.isfinite(cost):
+                candidates.append((cost, candidate_arm, grasp_poses))
+
+        if not candidates:
+            return None, None
+        _, selected_arm, selected_poses = min(candidates, key=lambda item: item[0])
+        self._selected_grasp_arm = selected_arm
+        return selected_poses
+
     def grasp_actor(
         self,
         actor: Actor,
@@ -1342,54 +1430,55 @@ class Base_Task(gym.Env):
     ):
         if not self.plan_success:
             return None, []
-        arm_tag = self._resolve_arm_tag(arm_tag)
+        logical_arm_tag = ArmTag(arm_tag)
+        execution_arm_tag = self._resolve_arm_tag(logical_arm_tag)
         if grasp_dis == 0 and "panthera-6dof" in str(self.robot_type):
             grasp_dis = PANTHERA_DEFAULT_GRASP_DIS
         if self.need_plan == False:
             if pre_grasp_dis == grasp_dis:
-                return arm_tag, [
-                    Action(arm_tag, "move", target_pose=[0, 0, 0, 0, 0, 0, 0]),
-                    Action(arm_tag, "close", target_gripper_pos=gripper_pos),
+                return execution_arm_tag, [
+                    Action(execution_arm_tag, "move", target_pose=[0, 0, 0, 0, 0, 0, 0]),
+                    Action(execution_arm_tag, "close", target_gripper_pos=gripper_pos),
                 ]
             else:
-                return arm_tag, [
-                    Action(arm_tag, "move", target_pose=[0, 0, 0, 0, 0, 0, 0]),
+                return execution_arm_tag, [
+                    Action(execution_arm_tag, "move", target_pose=[0, 0, 0, 0, 0, 0, 0]),
                     Action(
-                        arm_tag,
+                        execution_arm_tag,
                         "move",
                         target_pose=[0, 0, 0, 0, 0, 0, 0],
                         constraint_pose=[1, 1, 1, 0, 0, 0],
                     ),
-                    Action(arm_tag, "close", target_gripper_pos=gripper_pos),
+                    Action(execution_arm_tag, "close", target_gripper_pos=gripper_pos),
                 ]
 
         pre_grasp_pose, grasp_pose = self.choose_grasp_pose(
             actor,
-            arm_tag=arm_tag,
+            arm_tag=logical_arm_tag,
             pre_dis=pre_grasp_dis,
             target_dis=grasp_dis,
             contact_point_id=contact_point_id,
         )
         if pre_grasp_pose is None or grasp_pose is None:
             raise UnStableError(
-                f"No valid grasp pose for actor={actor.get_name()}, arm={arm_tag}, "
+                f"No valid grasp pose for actor={actor.get_name()}, arm={logical_arm_tag}, "
                 f"contact_point_id={contact_point_id}"
             )
         if pre_grasp_pose == grasp_pose:
-            return arm_tag, [
-                Action(arm_tag, "move", target_pose=pre_grasp_pose),
-                Action(arm_tag, "close", target_gripper_pos=gripper_pos),
+            return execution_arm_tag, [
+                Action(execution_arm_tag, "move", target_pose=pre_grasp_pose),
+                Action(execution_arm_tag, "close", target_gripper_pos=gripper_pos),
             ]
         else:
-            return arm_tag, [
-                Action(arm_tag, "move", target_pose=pre_grasp_pose),
+            return execution_arm_tag, [
+                Action(execution_arm_tag, "move", target_pose=pre_grasp_pose),
                 Action(
-                    arm_tag,
+                    execution_arm_tag,
                     "move",
                     target_pose=grasp_pose,
                     constraint_pose=[1, 1, 1, 0, 0, 0],
                 ),
-                Action(arm_tag, "close", target_gripper_pos=gripper_pos),
+                Action(execution_arm_tag, "close", target_gripper_pos=gripper_pos),
             ]
 
     def get_place_pose(
@@ -1404,11 +1493,13 @@ class Base_Task(gym.Env):
         functional_point_id: int = None,
         pre_dis: float = 0.1,
         pre_dis_axis: Literal["grasp", "fp"] | np.ndarray | list = "grasp",
+        execution_arm_tag: ArmTag = None,
     ):
 
         if not self.plan_success:
             return [-1, -1, -1, -1, -1, -1, -1]
-        arm_tag = self._resolve_arm_tag(arm_tag)
+        logical_arm_tag = ArmTag(arm_tag)
+        execution_arm_tag = self._resolve_arm_tag(execution_arm_tag or logical_arm_tag)
 
         actor_matrix = actor.get_pose().to_transformation_matrix()
         if functional_point_id is not None:
@@ -1418,7 +1509,14 @@ class Base_Task(gym.Env):
             place_start_pose = actor.get_pose()
             z_transform = True
 
-        end_effector_pose = (self.robot.get_left_ee_pose() if arm_tag == "left" else self.robot.get_right_ee_pose())
+        # In single-arm mode, the logical arm controls the side-specific
+        # placement orientation while the physical arm supplies the current
+        # end-effector pose used to construct the executable target.
+        end_effector_pose = (
+            self.robot.get_left_ee_pose()
+            if execution_arm_tag == "left"
+            else self.robot.get_right_ee_pose()
+        )
 
         if constrain == "auto":
             grasp_direct_vec = place_start_pose.p - end_effector_pose[:3]
@@ -1429,7 +1527,7 @@ class Base_Task(gym.Env):
                     constrain="align",
                     actor_axis=grasp_direct_vec,
                     actor_axis_type="world",
-                    align_axis=[1, 1, 0] if arm_tag == "left" else [-1, 1, 0],
+                    align_axis=[1, 1, 0] if logical_arm_tag == "left" else [-1, 1, 0],
                     z_transform=z_transform,
                 )
             else:
@@ -1490,26 +1588,30 @@ class Base_Task(gym.Env):
         pre_dis: float = 0.1,
         dis: float = 0.02,
         is_open: bool = True,
+        execution_arm_tag: ArmTag = None,
         **args,
     ):
         if not self.plan_success:
             return None, []
-        arm_tag = self._resolve_arm_tag(arm_tag)
+        logical_arm_tag = ArmTag(arm_tag)
+        execution_arm_tag = self._resolve_arm_tag(execution_arm_tag or logical_arm_tag)
         if self.need_plan:
             place_pre_pose = self.get_place_pose(
                 actor,
-                arm_tag,
+                logical_arm_tag,
                 target_pose,
                 functional_point_id=functional_point_id,
                 pre_dis=pre_dis,
+                execution_arm_tag=execution_arm_tag,
                 **args,
             )
             place_pose = self.get_place_pose(
                 actor,
-                arm_tag,
+                logical_arm_tag,
                 target_pose,
                 functional_point_id=functional_point_id,
                 pre_dis=dis,
+                execution_arm_tag=execution_arm_tag,
                 **args,
             )
         else:
@@ -1517,12 +1619,12 @@ class Base_Task(gym.Env):
             place_pose = [0, 0, 0, 0, 0, 0, 0]
 
         actions = [
-            Action(arm_tag, "move", target_pose=place_pre_pose),
-            Action(arm_tag, "move", target_pose=place_pose),
+            Action(execution_arm_tag, "move", target_pose=place_pre_pose),
+            Action(execution_arm_tag, "move", target_pose=place_pose),
         ]
         if is_open:
-            actions.append(Action(arm_tag, "open", target_gripper_pos=1.0))
-        return arm_tag, actions
+            actions.append(Action(execution_arm_tag, "open", target_gripper_pos=1.0))
+        return execution_arm_tag, actions
 
     def move_by_displacement(
         self,
@@ -1736,7 +1838,6 @@ class Base_Task(gym.Env):
         self._update_render()
         if self.render_freq:
             self.viewer.render()
-
 
     def take_action(self, action, action_type:Literal['qpos', 'ee']='qpos'):  # action_type: qpos or ee
         if self.take_action_cnt == self.step_lim or self.eval_success:

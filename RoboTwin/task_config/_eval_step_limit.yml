@@ -33,7 +33,7 @@ place_object_basket: 700
 place_object_scale: 400
 place_object_stand: 400
 place_phone_stand: 400
-move_pillbottle_pad: 400
+move_pillbottle_pad: 800
 place_shoe: 500
 press_stapler: 400
 put_bottles_dustbin: 1700
